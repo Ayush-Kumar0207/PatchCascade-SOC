@@ -388,6 +388,6 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 
 *Train smarter. Patch faster. Crash never.*
 
-[![Made with ❤️](https://img.shields.io/badge/Made%20with-❤️-red?style=flat-square)](https://github.com)
+Made with ❤️ in India
 
 </div>
