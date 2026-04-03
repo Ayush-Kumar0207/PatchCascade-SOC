@@ -341,12 +341,18 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 <table>
   <tr>
     <td align="center">
-      <strong>Ayush Kumar</strong><br/>
-      <sub>Team Lead & Core Developer</sub>
+      <a href="https://github.com/Ayush-Kumar0207">
+        <img src="https://github.com/Ayush-Kumar0207.png" width="100px;" alt="Ayush Kumar"/><br/>
+        <sub><b>Ayush Kumar</b></sub>
+      </a><br/>
+      <sub>🚀 Team Lead & Core Developer</sub>
     </td>
     <td align="center">
-      <strong>Ravi Prashant</strong><br/>
-      <sub>Developer & Architect</sub>
+      <a href="https://github.com/cypher00grd">
+        <img src="https://github.com/cypher00grd.png" width="100px;" alt="Ravi Prashant"/><br/>
+        <sub><b>Ravi Prashant</b></sub>
+      </a><br/>
+      <sub>🏗️ Developer & Architect</sub>
     </td>
   </tr>
 </table>
