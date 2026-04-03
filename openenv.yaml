@@ -1,0 +1,137 @@
+# =============================================================================
+# PatchCascade SOC - OpenEnv Metadata
+# =============================================================================
+# Configuration file for the Meta PyTorch OpenEnv Hackathon.
+# Defines environment metadata, capabilities, and evaluation parameters.
+# =============================================================================
+
+# Environment identification
+name: patchcascade
+display_name: "PatchCascade SOC"
+version: "1.0.0"
+description: |
+  A Security Operations Center (SOC) simulation environment where an agent
+  manages vulnerability patches across a network of interdependent servers.
+  The agent must balance patching critical vulnerabilities (reducing risk)
+  with keeping services online (reducing downtime), while avoiding cascade
+  failures caused by dependency violations.
+
+# Author information
+author: "PatchCascade SOC Team"
+license: "Apache-2.0"
+repository: "https://github.com/patchcascade/soc-env"
+
+# Environment type and capabilities
+type: "turn-based"
+observation_type: "json"
+action_type: "json"
+
+# Task levels available
+tasks:
+  - name: "easy"
+    description: "3-5 nodes, no dependencies, 1 vulnerability"
+    max_turns: 30
+    difficulty: 1
+  - name: "medium"
+    description: "5-8 nodes, linear dependency chain, 2 vulnerabilities"
+    max_turns: 50
+    difficulty: 2
+  - name: "hard"
+    description: "10-15 nodes, complex dependency graph, multiple critical vulns"
+    max_turns: 100
+    difficulty: 3
+
+# Default evaluation settings
+evaluation:
+  default_task: "medium"
+  metrics:
+    - name: "success_rate"
+      description: "Percentage of episodes where all vulnerabilities are patched"
+      higher_is_better: true
+    - name: "total_reward"
+      description: "Sum of all step rewards"
+      higher_is_better: true
+    - name: "steps_to_completion"
+      description: "Number of steps taken to complete (lower is better)"
+      higher_is_better: false
+    - name: "cascade_failures"
+      description: "Total nodes crashed due to dependency violations"
+      higher_is_better: false
+
+# Server configuration
+server:
+  port: 8000
+  endpoints:
+    reset: "/reset"
+    step: "/step"
+    observation: "/observation"
+    state: "/state"
+    health: "/health"
+
+# Action space schema reference
+action_schema:
+  type: "object"
+  properties:
+    action_type:
+      type: "string"
+      enum: ["scan_host", "suspend_service", "apply_patch", "resume_service", "noop"]
+    target:
+      type: "string"
+      description: "Hostname of target server"
+    cve_id:
+      type: "string"
+      pattern: "^CVE-\\d{4}-\\d{4,}$"
+      description: "Required for apply_patch action"
+    reason:
+      type: "string"
+      description: "Optional reasoning for the action"
+  required: ["action_type"]
+
+# Observation space schema reference
+observation_schema:
+  type: "object"
+  properties:
+    nodes:
+      type: "array"
+      description: "List of server nodes with state information"
+    vulnerabilities:
+      type: "array"
+      description: "List of active CVEs to patch"
+    dependencies:
+      type: "array"
+      description: "Dependency graph edges"
+    health:
+      type: "object"
+      description: "Aggregate network health metrics"
+    last_action_result:
+      type: "string"
+      description: "Result of the previous action"
+    messages:
+      type: "array"
+      description: "System messages for the current turn"
+
+# Reward structure documentation
+rewards:
+  description: |
+    Dense reward shaping based on penalty reduction.
+    Reward = (Previous Turn's Total Penalty) - (Current Turn's Total Penalty)
+    
+    Penalty Components:
+    - Risk Penalty: Sum of CVSS scores for vulns on ONLINE nodes (doubled if exploit_in_wild)
+    - Downtime Penalty: Per non-ONLINE node, weighted by tier (Tier1=3x, Tier2=2x, Tier3=1x)
+    - Crashed nodes have doubled downtime penalty
+    
+    Terminal Bonuses:
+    - Victory (all patched): +50.0
+    - Catastrophic failure (all crashed): -100.0
+    - Invalid action: -0.5
+
+# Tags for discoverability
+tags:
+  - "security"
+  - "network-management"
+  - "dependency-graph"
+  - "turn-based"
+  - "json-observation"
+  - "json-action"
+  - "llm-agent"
