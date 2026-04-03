@@ -345,14 +345,14 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
         <img src="https://github.com/Ayush-Kumar0207.png" width="100px;" alt="Ayush Kumar"/><br/>
         <sub><b>Ayush Kumar</b></sub>
       </a><br/>
-      <sub>🚀 Team Lead & Core Developer</sub>
+      <sub>🚀 Team Lead | Core Builder</sub>
     </td>
     <td align="center">
       <a href="https://github.com/cypher00grd">
         <img src="https://github.com/cypher00grd.png" width="100px;" alt="Ravi Prashant"/><br/>
         <sub><b>Ravi Prashant</b></sub>
       </a><br/>
-      <sub>🏗️ Developer & Architect</sub>
+      <sub>🏗️ Architect and Developer</sub>
     </td>
   </tr>
 </table>
