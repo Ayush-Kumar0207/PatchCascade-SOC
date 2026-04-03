@@ -17,11 +17,16 @@ pinned: false
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue?style=for-the-badge)](https://huggingface.co/spaces)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=for-the-badge)](LICENSE)
 
 **Train AI agents to manage vulnerability patches across enterprise networks—without crashing production.**
 
-[Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [API Reference](#-api-reference)
+[Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [API Reference](#-api-reference) • [Contributors](#-contributors)
+
+---
+
+🏆 **Meta PyTorch OpenEnv Hackathon 2026 Submission**
 
 </div>
 
@@ -43,6 +48,19 @@ Security teams face an impossible tradeoff:
 **The real nightmare?** Modern infrastructure has *dependencies*. Patch your database, and suddenly your web servers crash. Take down authentication, and your entire stack follows. One wrong move triggers a **cascade failure** that costs millions.
 
 **PatchCascade SOC** is an OpenEnv-compatible reinforcement learning environment that trains AI agents to navigate this paradox—learning to patch vulnerabilities *in the optimal order* while minimizing downtime and avoiding catastrophic cascades.
+
+---
+
+## 💡 Why PatchCascade?
+
+| Feature | Traditional RL Envs | PatchCascade SOC |
+|---------|--------------------:|:-----------------|
+| **Observation Space** | Numeric arrays | Rich JSON with semantic meaning |
+| **Action Space** | Discrete indices | Named actions with parameters |
+| **Reward Signal** | Sparse (win/lose) | Dense (continuous feedback) |
+| **Real-World Mapping** | Abstract | Direct SOC workflow simulation |
+| **LLM Compatibility** | Requires embedding | Native JSON schema descriptions |
+| **Dependency Modeling** | None | Full cascade simulation |
 
 ---
 
@@ -183,6 +201,28 @@ python inference.py
 bash validate.sh https://your-space.hf.space
 ```
 
+### 🎬 Sample Interaction
+
+```python
+from client import PatchCascadeLocalClient, PatchCascadeAction
+
+# Initialize local client (no server needed)
+client = PatchCascadeLocalClient()
+obs = client.reset(task_level="easy")
+
+print(f"Nodes: {[n.hostname for n in obs.nodes]}")
+print(f"Vulns: {[v.cve_id for v in obs.vulnerabilities]}")
+
+# Apply a patch
+action = PatchCascadeAction(
+    action_type="apply_patch",
+    target="web-frontend-01",
+    cve_id="CVE-2024-1234"
+)
+obs, reward, done, truncated, info = client.step(action)
+print(f"Reward: {reward:.2f}, Done: {done}")
+```
+
 ---
 
 ## 🎮 The Challenge
@@ -296,10 +336,52 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 
 ---
 
+## 👥 Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <strong>Ayush Kumar</strong><br/>
+      <sub>Team Lead & Core Developer</sub>
+    </td>
+    <td align="center">
+      <strong>Ravi Prashant</strong><br/>
+      <sub>Developer & Architect</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🛠️ Built With
+
+| Technology | Purpose |
+|------------|---------|
+| **Python 3.11+** | Core language |
+| **Pydantic v2** | Data validation & serialization |
+| **FastAPI** | High-performance async API |
+| **Uvicorn** | ASGI server |
+| **Docker** | Containerization |
+| **OpenAI SDK** | LLM integration |
+
+---
+
+## 🙏 Acknowledgments
+
+- **Meta AI** — For hosting the PyTorch OpenEnv Hackathon
+- **Hugging Face** — For Spaces infrastructure
+- **OpenEnv Community** — For the standardized RL environment protocol
+
+---
+
 <div align="center">
 
 **Built for the Meta PyTorch OpenEnv Hackathon 2026**
 
+**Created by Ayush Kumar & Ravi Prashant**
+
 *Train smarter. Patch faster. Crash never.*
+
+[![Made with ❤️](https://img.shields.io/badge/Made%20with-❤️-red?style=flat-square)](https://github.com)
 
 </div>

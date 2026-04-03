@@ -17,7 +17,7 @@ description: |
   failures caused by dependency violations.
 
 # Author information
-author: "PatchCascade SOC Team"
+author: "Ayush Kumar & Ravi Prashant (PatchCascade SOC Team)"
 license: "Apache-2.0"
 repository: "https://github.com/patchcascade/soc-env"
 
