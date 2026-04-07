@@ -155,84 +155,24 @@ else
   stop_at "Step 2"
 fi
 
-log "${BOLD}Step 3/3: Validating openenv.yaml${NC} ..."
+log "${BOLD}Step 3/3: Running openenv validate${NC} ..."
 
-# The 'openenv' package on PyPI (0.1.x) is NOT the hackathon validation CLI.
-# The hackathon's openenv-core may not be publicly available yet.
-# We'll validate the required files exist instead.
-
-REQUIRED_FILES=(
-  "openenv.yaml"
-  "models.py"
-  "environment.py"
-  "server.py"
-  "inference.py"
-  "Dockerfile"
-  "requirements.txt"
-)
-
-MISSING_FILES=()
-for f in "${REQUIRED_FILES[@]}"; do
-  if [ ! -f "$REPO_DIR/$f" ]; then
-    MISSING_FILES+=("$f")
-  fi
-done
-
-if [ ${#MISSING_FILES[@]} -eq 0 ]; then
-  pass "All required files present: ${REQUIRED_FILES[*]}"
-else
-  fail "Missing required files: ${MISSING_FILES[*]}"
+if ! command -v openenv &>/dev/null; then
+  fail "openenv command not found"
+  hint "Install it: pip install openenv-core"
   stop_at "Step 3"
 fi
 
-# Validate openenv.yaml has required fields
-# On Windows, 'python' may redirect to Microsoft Store. Use python.exe or py.exe
-PYTHON_CMD=""
-if command -v py &>/dev/null; then
-  PYTHON_CMD="py"
-elif command -v python.exe &>/dev/null; then
-  PYTHON_CMD="python.exe"
-elif command -v python3 &>/dev/null; then
-  PYTHON_CMD="python3"
-elif command -v python &>/dev/null; then
-  PYTHON_CMD="python"
-fi
+VALIDATE_OK=false
+VALIDATE_OUTPUT=$(cd "$REPO_DIR" && openenv validate 2>&1) && VALIDATE_OK=true
 
-if [ -n "$PYTHON_CMD" ]; then
-  # Use a temp file to avoid path quoting issues with spaces
-  YAML_SCRIPT=$(portable_mktemp "validate-yaml")
-  CLEANUP_FILES+=("$YAML_SCRIPT")
-  cat > "$YAML_SCRIPT" << 'PYEOF'
-import yaml
-import sys
-import os
-repo_dir = sys.argv[1]
-yaml_path = os.path.join(repo_dir, 'openenv.yaml')
-try:
-    with open(yaml_path, 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
-    required = ['name', 'version', 'description', 'tasks']
-    missing = [k for k in required if k not in data]
-    if missing:
-        print(f'Missing fields: {missing}')
-        sys.exit(1)
-    print(f'Valid: name={data["name"]}, version={data["version"]}, tasks={len(data["tasks"])}')
-except Exception as e:
-    print(f'YAML error: {e}')
-    sys.exit(1)
-PYEOF
-
-  YAML_CHECK=$($PYTHON_CMD "$YAML_SCRIPT" "$REPO_DIR" 2>&1) && YAML_OK=true || YAML_OK=false
-
-  if [ "$YAML_OK" = true ]; then
-    pass "openenv.yaml validated: $YAML_CHECK"
-  else
-    fail "openenv.yaml validation error: $YAML_CHECK"
-    hint "Ensure openenv.yaml has: name, version, description, tasks"
-    stop_at "Step 3"
-  fi
+if [ "$VALIDATE_OK" = true ]; then
+  pass "openenv validate passed"
+  [ -n "$VALIDATE_OUTPUT" ] && log "  $VALIDATE_OUTPUT"
 else
-  log "${YELLOW}SKIPPED${NC} -- Python not found for YAML validation"
+  fail "openenv validate failed"
+  printf "%s\n" "$VALIDATE_OUTPUT"
+  stop_at "Step 3"
 fi
 
 printf "\n"
