@@ -193,6 +193,24 @@ Analyze this state and respond with your action as a JSON object."""
 # OUTPUT FORMATTING (STRICT COMPLIANCE)
 # =============================================================================
 
+# Reward normalization bounds (empirically determined from environment)
+# Worst case: catastrophic failure with heavy downtime = ~-300
+# Best case: perfect victory with minimal penalties = ~+50
+REWARD_MIN = -300.0
+REWARD_MAX = 50.0
+
+
+def normalize_reward(raw_reward: float) -> float:
+    """
+    Normalize a raw reward to the 0.0-1.0 range required by the grader.
+    
+    Formula: (reward - min) / (max - min)
+    Clamps to [0.0, 1.0] to handle edge cases.
+    """
+    normalized = (raw_reward - REWARD_MIN) / (REWARD_MAX - REWARD_MIN)
+    return max(0.0, min(1.0, normalized))
+
+
 def print_start(task_level: str, model_name: str) -> None:
     """Print the [START] line. Exactly once at beginning."""
     print(f"[START] task={task_level} env=patchcascade model={model_name}", flush=True)
@@ -204,11 +222,13 @@ def print_step(step_num: int, action: PatchCascadeAction, reward: float, done: b
     
     Format: [STEP]  step={n} action={json} reward={r:.2f} done={true/false} error={msg|null}
     NOTE: Two spaces after [STEP] per grading bot regex requirements.
+    NOTE: Rewards are normalized to 0.0-1.0 range per hackathon requirements.
     """
     action_str = action.model_dump_json(exclude_none=True).replace(" ", "")
     done_str = "true" if done else "false"
     error_str = error if error is not None else "null"
-    print(f"[STEP]  step={step_num} action={action_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
+    norm_reward = normalize_reward(reward)
+    print(f"[STEP]  step={step_num} action={action_str} reward={norm_reward:.2f} done={done_str} error={error_str}", flush=True)
 
 
 def print_end(success: bool, total_steps: int, rewards: list[float]) -> None:
@@ -217,9 +237,11 @@ def print_end(success: bool, total_steps: int, rewards: list[float]) -> None:
     
     Format: [END]   success={true/false} steps={n} rewards={r1:.2f},{r2:.2f},...
     NOTE: Three spaces after [END] per grading bot regex requirements.
+    NOTE: Rewards are normalized to 0.0-1.0 range per hackathon requirements.
     """
     success_str = "true" if success else "false"
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    norm_rewards = [normalize_reward(r) for r in rewards]
+    rewards_str = ",".join(f"{r:.2f}" for r in norm_rewards)
     print(f"[END]   success={success_str} steps={total_steps} rewards={rewards_str}", flush=True)
 
 

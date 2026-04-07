@@ -323,13 +323,15 @@ Execute an action.
 
 ### 📊 Baseline Scores (Reference)
 
-Based on initial evaluations using our `inference.py` baseline agent on the **Medium Task** (max 50 steps):
+Based on initial evaluations using our `inference.py` baseline agent on the **Medium Task** (max 50 steps).
 
-| Agent Type | Expected Score | Behavior Profile |
-|------------|----------------|------------------|
-| **Random Action** | `-150.0` to `-300.0` | Usually triggers cascade failures by suspending Tier 1 nodes without warning. |
-| **Simple Heuristic** | `+10.0` to `+20.0` | Patches critical vulnerabilities but incurs heavy downtime penalties. |
-| **Optimal Target (RL)** | `+50.0` (Max) | Patches all vulnerabilities in the correct dependency order with minimal downtime. |
+> **Note:** Scores are normalized to the 0.0–1.0 range per hackathon requirements.
+
+| Agent Type | Normalized Score | Behavior Profile |
+|------------|------------------|------------------|
+| **Random Action** | `0.00` to `0.43` | Usually triggers cascade failures by suspending Tier 1 nodes without warning. |
+| **Simple Heuristic** | `0.89` to `0.91` | Patches critical vulnerabilities but incurs heavy downtime penalties. |
+| **Optimal Target (RL)** | `1.00` (Max) | Patches all vulnerabilities in the correct dependency order with minimal downtime. |
 
 ---
 
