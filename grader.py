@@ -113,11 +113,12 @@ class TaskGrader:
         )
 
     def _normalize_reward(self, total_reward: float) -> float:
-        """Normalize reward to [0.0, 1.0] range."""
+        """Normalize reward to strict (0, 1) range — never exactly 0.0 or 1.0."""
         if self.max_reward == self.min_reward:
             return 0.5
         score = (total_reward - self.min_reward) / (self.max_reward - self.min_reward)
-        return max(0.0, min(1.0, score))
+        # Clamp to open interval (0, 1) as required by hackathon validator
+        return max(0.001, min(0.999, score))
 
     def _check_success_criteria(self, episode_data: dict[str, Any]) -> bool:
         """Check task-specific success criteria. Override in subclasses."""

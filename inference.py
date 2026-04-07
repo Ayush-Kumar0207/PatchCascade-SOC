@@ -205,14 +205,15 @@ REWARD_MAX = 50.0
 
 def compute_normalized_score(rewards: list[float]) -> float:
     """
-    Compute normalized score (0.0-1.0) from raw rewards.
+    Compute normalized score strictly in (0, 1) from raw rewards.
     
-    This is computed at the END of the episode, not per-step.
-    Formula: clamp((sum(rewards) - min) / (max - min), 0.0, 1.0)
+    Hackathon validator requires scores strictly between 0 and 1
+    (not 0.0 and not 1.0).
     """
     total_reward = sum(rewards)
     normalized = (total_reward - REWARD_MIN) / (REWARD_MAX - REWARD_MIN)
-    return max(0.0, min(1.0, normalized))
+    # Clamp to open interval (0, 1) — never exactly 0.0 or 1.0
+    return max(0.001, min(0.999, normalized))
 
 
 def print_start(task_level: str, model_name: str) -> None:
