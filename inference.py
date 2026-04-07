@@ -10,14 +10,14 @@ results in the required standardized format.
 Environment Variables:
     API_BASE_URL: LLM API endpoint (default: https://router.huggingface.co/v1)
     MODEL_NAME: Model identifier (default: Qwen/Qwen2.5-72B-Instruct)
-    HF_TOKEN: HuggingFace API token (required)
+    HF_TOKEN: HuggingFace API token (required, no default)
     TASK_LEVEL: Environment difficulty (default: medium)
     ENV_SEED: Random seed for reproducibility (optional)
 
 Output Format (STRICT - DO NOT MODIFY):
     [START] task={level} env=patchcascade model={model}
-    [STEP] step={n} action={type}_{target} reward={r:.2f} done={true/false} error={msg|null}
-    [END] success={true/false} steps={n} rewards={r1:.2f},{r2:.2f},...
+    [STEP] step={n} action={json} reward={r:.2f} done={true/false} error={msg|null}
+    [END] success={true/false} steps={n} score={s:.3f} rewards={r1:.2f},{r2:.2f},...
 
 Author: PatchCascade SOC Team
 License: Apache 2.0
@@ -43,7 +43,7 @@ from models import ActionType, PatchCascadeAction, PatchCascadeObservation
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+HF_TOKEN = os.environ.get("HF_TOKEN")
 TASK_LEVEL = os.environ.get("TASK_LEVEL", "medium")
 ENV_SEED = os.environ.get("ENV_SEED")
 
