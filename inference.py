@@ -11,7 +11,7 @@ Environment Variables:
     API_BASE_URL: LLM API endpoint (default: https://router.huggingface.co/v1)
     MODEL_NAME: Model identifier (default: Qwen/Qwen2.5-72B-Instruct)
     HF_TOKEN: HuggingFace API token (required, no default)
-    TASK_LEVEL: Environment difficulty (default: medium)
+    TASK_LEVEL: Environment difficulty (default: all; options: all, easy, medium, hard)
     ENV_SEED: Random seed for reproducibility (optional)
 
 Output Format (STRICT - DO NOT MODIFY):
@@ -44,7 +44,7 @@ from models import ActionType, PatchCascadeAction, PatchCascadeObservation
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.environ.get("HF_TOKEN")
-TASK_LEVEL = os.environ.get("TASK_LEVEL", "medium")
+TASK_LEVEL = os.environ.get("TASK_LEVEL", "all")
 ENV_SEED = os.environ.get("ENV_SEED")
 
 # Maximum retries for LLM parsing errors
@@ -249,29 +249,19 @@ def print_end(success: bool, total_steps: int, score: float, rewards: list[float
 # MAIN INFERENCE LOOP
 # =============================================================================
 
-async def run_inference() -> None:
+async def run_single_task(
+    llm_client: AsyncOpenAI,
+    task_level: str,
+    env_seed: int | None = None,
+) -> None:
     """
-    Main inference loop.
+    Run inference for a single task level.
     
-    1. Initialize environment and LLM client
-    2. Reset environment
-    3. Loop: get LLM action -> step environment -> log results
-    4. Print final summary
+    Each task produces its own [START]/[STEP]/[END] output block.
     """
-    # Validate configuration
-    task_level: Literal["easy", "medium", "hard"]
-    if TASK_LEVEL in ("easy", "medium", "hard"):
-        task_level = TASK_LEVEL  # type: ignore
-    else:
-        print(f"ERROR: Invalid TASK_LEVEL: {TASK_LEVEL}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Initialize clients
-    llm_client = create_llm_client()
-    env_seed = int(ENV_SEED) if ENV_SEED else None
     env_client = PatchCascadeLocalClient(seed=env_seed)
     
-    # Print start marker (EXACTLY ONCE)
+    # Print start marker
     print_start(task_level, MODEL_NAME)
     
     # Reset environment
@@ -304,20 +294,46 @@ async def run_inference() -> None:
         # Get error message if any
         error_msg: str | None = info.get("error") if not info.get("valid", True) else None
         
-        # Print step marker (EXACTLY ONCE PER STEP)
+        # Print step marker
         print_step(step_num, action, reward, done, error_msg)
         
         # Check for victory
         if done:
-            # Success if all vulnerabilities patched (termination_reason would be "all_patched")
-            # We can infer from observation: if no vulnerabilities remain, it's a success
             success = len(observation.vulnerabilities) == 0
     
     # Compute normalized score (0.0-1.0)
     score = compute_normalized_score(rewards)
     
-    # Print end marker (EXACTLY ONCE)
+    # Print end marker
     print_end(success, step_num, score, rewards)
+
+
+async def run_inference() -> None:
+    """
+    Main inference entry point.
+    
+    When TASK_LEVEL='all' (default), runs all 3 tasks sequentially:
+    easy -> medium -> hard. Each task produces its own [START]/[END] block.
+    
+    When TASK_LEVEL is a specific level, runs only that task.
+    This ensures the hackathon validator sees grading output for all 3 tasks.
+    """
+    # Determine which tasks to run
+    if TASK_LEVEL == "all":
+        task_levels = ["easy", "medium", "hard"]
+    elif TASK_LEVEL in ("easy", "medium", "hard"):
+        task_levels = [TASK_LEVEL]
+    else:
+        print(f"ERROR: Invalid TASK_LEVEL: {TASK_LEVEL}. Use: all, easy, medium, hard", file=sys.stderr)
+        sys.exit(1)
+    
+    # Initialize LLM client (shared across tasks)
+    llm_client = create_llm_client()
+    env_seed = int(ENV_SEED) if ENV_SEED else None
+    
+    # Run each task
+    for task_level in task_levels:
+        await run_single_task(llm_client, task_level, env_seed)
 
 
 # =============================================================================
