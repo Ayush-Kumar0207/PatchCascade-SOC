@@ -37,8 +37,12 @@ COPY tasks/ ./tasks/
 
 # Copy metadata and documentation
 COPY openenv.yaml .
+COPY README.md .
 COPY ARCHITECTURE.md .
 COPY EXAMPLES.md .
+COPY CONTRIBUTING.md .
+COPY LICENSE .
+COPY smoke_test.py .
 
 # Expose the server port
 EXPOSE 8000

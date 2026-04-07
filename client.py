@@ -261,7 +261,7 @@ class PatchCascadeClient(HTTPEnvClient[PatchCascadeAction, PatchCascadeObservati
     
     async def reset(
         self,
-        task_level: Literal["easy", "medium", "hard"] = "easy",
+        task_level: Literal["easy", "medium", "hard", "incident_response", "zero_day"] = "easy",
         seed: int | None = None,
     ) -> PatchCascadeObservation:
         """
@@ -397,7 +397,7 @@ class PatchCascadeClientSync:
     
     def reset(
         self,
-        task_level: Literal["easy", "medium", "hard"] = "easy",
+        task_level: Literal["easy", "medium", "hard", "incident_response", "zero_day"] = "easy",
         seed: int | None = None,
     ) -> PatchCascadeObservation:
         """Reset environment synchronously."""
@@ -457,7 +457,7 @@ class PatchCascadeLocalClient:
     
     def reset(
         self,
-        task_level: Literal["easy", "medium", "hard"] = "easy",
+        task_level: Literal["easy", "medium", "hard", "incident_response", "zero_day"] = "easy",
         seed: int | None = None,
     ) -> PatchCascadeObservation:
         """Reset environment."""

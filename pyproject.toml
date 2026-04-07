@@ -4,14 +4,49 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patchcascade-soc"
-version = "1.0.0"
-description = "PatchCascade SOC OpenEnv Environment"
+version = "2.0.0"
+description = "PatchCascade SOC — Autonomous Cyber-Resilience Through Reinforcement Learning"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Ayush Kumar"},
+    {name = "Ravi Prashant"},
+]
+keywords = ["openenv", "reinforcement-learning", "security", "soc", "vulnerability-management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "openenv-core>=0.2.0"
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "httpx>=0.26.0",
+    "openai>=1.10.0",
 ]
 
-[project.scripts]
-server = "server.app:main"
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.26.0",
+]
+
+[project.urls]
+Repository = "https://github.com/Ayush-Kumar0207/PatchCascade-SOC"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

@@ -179,7 +179,7 @@ def get_env() -> PatchCascadeEnvironment:
 app = FastAPI(
     title="PatchCascade SOC Environment",
     description="OpenEnv-compliant RL environment for SOC vulnerability management simulation",
-    version="1.0.0",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -226,7 +226,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         environment="patchcascade",
-        version="1.0.0",
+        version="2.0.0",
     )
 
 
@@ -276,6 +276,8 @@ async def step_environment(request: StepRequest) -> StepResponse:
             truncated=result.truncated,
             info=result.info,
         )
+    except HTTPException:
+        raise
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -446,7 +448,7 @@ async def get_metadata() -> dict:
             "with keeping services online (reducing downtime), while avoiding cascade "
             "failures caused by dependency violations."
         ),
-        "version": "1.0.0",
+        "version": "2.0.0",
         "author": "Ayush Kumar & Ravi Prashant (PatchCascade SOC Team)",
         "license": "Apache-2.0",
         "repository": "https://github.com/Ayush-Kumar0207/PatchCascade-SOC",
