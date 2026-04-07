@@ -239,6 +239,7 @@ class PatchCascadeEnv:
             action_history=[],
             is_terminated=False,
             termination_reason=None,
+            messages=[],  # Initialize messages for dynamic events
         )
         
         # Reset tracking variables
@@ -1179,6 +1180,52 @@ class PatchCascadeEnv:
         # --- Zero-Day CVE Injection ---
         if self._task_level == "zero_day":
             self._process_zero_day_injection()
+        
+        # --- Stochastic Node Degradation (hard/incident_response) ---
+        # Adds real-world randomness: overloaded nodes may degrade under stress
+        if self._task_level in ("hard", "incident_response"):
+            self._process_stochastic_degradation()
+    
+    def _process_stochastic_degradation(self) -> None:
+        """
+        Simulate random node degradation under stress conditions.
+        
+        In real SOCs, heavily loaded or compromised nodes may experience
+        degraded performance or spontaneous failures. This mechanic:
+        
+        - 3% chance per turn per vulnerable ONLINE node to degrade
+        - Degradation: node becomes CRASHED if it has an exploited CVE
+        - Creates realistic uncertainty and rewards proactive patching
+        """
+        assert self._state is not None
+        
+        # Only trigger if there are unpatched exploited vulnerabilities
+        exploited_hosts = set()
+        for vuln in self._state.vulnerabilities:
+            if vuln.exploit_in_wild:
+                exploited_hosts.update(vuln.affected_hosts)
+        
+        if not exploited_hosts:
+            return
+        
+        DEGRADATION_CHANCE = 0.03  # 3% per vulnerable node per turn
+        
+        for node in self._state.nodes:
+            if node.state != NodeState.ONLINE:
+                continue
+            if node.hostname not in exploited_hosts:
+                continue
+            
+            # Roll for degradation
+            if self._rng.random() < DEGRADATION_CHANCE:
+                # Node experiences stress-induced failure
+                node.state = NodeState.CRASHED
+                self._state.health.nodes_online -= 1
+                self._state.health.nodes_crashed += 1
+                
+                self._messages.append(
+                    f"⚠️ ALERT: {node.hostname} crashed due to exploit-induced stress!"
+                )
     
     def _process_exploit_spreading(self) -> None:
         """
@@ -1548,15 +1595,173 @@ class PatchCascadeEnv:
                 return node
         raise ValueError(f"Node '{hostname}' not found")
     
-    def render(self) -> str:
+    def render(self, mode: str = "ascii") -> str:
         """
-        Render a human-readable summary of the current state.
+        Render a human-readable visualization of the current state.
         
-        Useful for debugging and visualization.
+        Args:
+            mode: "ascii" for network diagram, "text" for simple list
+        
+        Returns:
+            Formatted string visualization suitable for terminal or logs.
         """
         if self._state is None:
             return "Environment not initialized. Call reset() first."
         
+        if mode == "text":
+            return self._render_text()
+        return self._render_ascii()
+    
+    def _render_ascii(self) -> str:
+        """
+        Render an ASCII network diagram with visual node states.
+        
+        Example output:
+        ╔══════════════════════════════════════════════════════════════════╗
+        ║  🛡️ PatchCascade SOC — Turn 3/30 (Easy)                          ║
+        ╠══════════════════════════════════════════════════════════════════╣
+        ║  NETWORK TOPOLOGY                                                ║
+        ║  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          ║
+        ║  │ web-svr-01  │───►│ app-svr-01  │───►│ db-main-01  │          ║
+        ║  │   ONLINE    │    │  PATCHING   │    │  SUSPENDED  │          ║
+        ║  │ ⚠️ CVE-1001 │    │   T2 ████░  │    │   T1 🔒     │          ║
+        ║  └─────────────┘    └─────────────┘    └─────────────┘          ║
+        ╠══════════════════════════════════════════════════════════════════╣
+        ║  VULNS: 2 active (1 CRITICAL, 1 HIGH) | HEALTH: 2/3 online      ║
+        ╚══════════════════════════════════════════════════════════════════╝
+        """
+        W = 70  # Box width
+        
+        # State icons
+        STATE_ICONS = {
+            "online": "✓",
+            "offline": "○",
+            "suspended": "⏸",
+            "patching": "⟳",
+            "crashed": "✗",
+        }
+        
+        STATE_COLORS = {
+            "online": "🟢",
+            "offline": "⚪",
+            "suspended": "🟡",
+            "patching": "🔵",
+            "crashed": "🔴",
+        }
+        
+        # Build header
+        task_name = self._task_level.replace("_", " ").title()
+        header = f"🛡️ PatchCascade SOC — Turn {self._state.turn_number}/{self._state.max_turns} ({task_name})"
+        
+        lines = [
+            "╔" + "═" * (W - 2) + "╗",
+            "║" + header.center(W - 2) + "║",
+            "╠" + "═" * (W - 2) + "╣",
+        ]
+        
+        # Network topology section
+        lines.append("║" + "  NETWORK TOPOLOGY".ljust(W - 2) + "║")
+        lines.append("║" + " " * (W - 2) + "║")
+        
+        # Build dependency graph visualization
+        deps = {d.node: d.depends_on for d in self._state.dependencies}
+        
+        # Find root nodes (no incoming edges)
+        all_nodes = {n.hostname for n in self._state.nodes}
+        dependent_nodes = set(deps.keys())
+        root_nodes = all_nodes - dependent_nodes
+        
+        # Build node boxes
+        vuln_map = {}
+        for v in self._state.vulnerabilities:
+            for h in v.affected_hosts:
+                if h not in vuln_map:
+                    vuln_map[h] = []
+                vuln_map[h].append(v)
+        
+        # Render nodes in rows
+        node_strs = []
+        for node in self._state.nodes:
+            icon = STATE_COLORS.get(node.state.value, "⚪")
+            vuln_indicator = ""
+            if node.hostname in vuln_map:
+                vulns = vuln_map[node.hostname]
+                if any(v.exploit_in_wild for v in vulns):
+                    vuln_indicator = " 🔥"
+                else:
+                    vuln_indicator = " ⚠️"
+            
+            tier_str = f"T{node.tier.value}"
+            state_str = node.state.value.upper()[:8]
+            
+            # Build compact node representation
+            node_repr = f"{icon} {node.hostname[:12]:<12} [{state_str:^8}] {tier_str}{vuln_indicator}"
+            node_strs.append(node_repr)
+        
+        # Add nodes (2 per row for readability)
+        for i in range(0, len(node_strs), 2):
+            row = "  " + node_strs[i]
+            if i + 1 < len(node_strs):
+                row += "    " + node_strs[i + 1]
+            lines.append("║" + row.ljust(W - 2) + "║")
+        
+        lines.append("║" + " " * (W - 2) + "║")
+        
+        # Dependencies section (if any)
+        if self._state.dependencies:
+            lines.append("║" + "  DEPENDENCIES".ljust(W - 2) + "║")
+            dep_strs = []
+            for dep in self._state.dependencies[:4]:  # Show max 4
+                arrow = "━━►" if dep.dependency_type == "hard" else "┄┄►"
+                dep_strs.append(f"    {dep.node[:10]} {arrow} {dep.depends_on[:10]}")
+            for ds in dep_strs:
+                lines.append("║" + ds.ljust(W - 2) + "║")
+            if len(self._state.dependencies) > 4:
+                lines.append("║" + f"    ... and {len(self._state.dependencies) - 4} more".ljust(W - 2) + "║")
+            lines.append("║" + " " * (W - 2) + "║")
+        
+        # Vulnerabilities section
+        lines.append("╠" + "═" * (W - 2) + "╣")
+        if not self._state.vulnerabilities:
+            vuln_summary = "  ✅ ALL VULNERABILITIES PATCHED!"
+        else:
+            crit = sum(1 for v in self._state.vulnerabilities if v.severity.value == "CRITICAL")
+            high = sum(1 for v in self._state.vulnerabilities if v.severity.value == "HIGH")
+            med = sum(1 for v in self._state.vulnerabilities if v.severity.value == "MEDIUM")
+            exploited = sum(1 for v in self._state.vulnerabilities if v.exploit_in_wild)
+            
+            parts = []
+            if crit: parts.append(f"{crit} CRIT")
+            if high: parts.append(f"{high} HIGH")
+            if med: parts.append(f"{med} MED")
+            vuln_str = ", ".join(parts) if parts else "0"
+            exploit_str = f" ({exploited} exploited!)" if exploited else ""
+            vuln_summary = f"  VULNS: {len(self._state.vulnerabilities)} active ({vuln_str}){exploit_str}"
+        
+        lines.append("║" + vuln_summary.ljust(W - 2) + "║")
+        
+        # Health metrics
+        h = self._state.health
+        health_str = f"  HEALTH: {h.nodes_online}/{h.total_nodes} online"
+        if h.nodes_crashed > 0:
+            health_str += f" | {h.nodes_crashed} crashed"
+        health_str += f" | Risk: {h.cumulative_risk_penalty:.1f} | Downtime: {h.cumulative_downtime_penalty:.1f}"
+        
+        lines.append("║" + health_str[:W-2].ljust(W - 2) + "║")
+        
+        # Reward
+        if self._state.reward_history:
+            total_reward = sum(self._state.reward_history)
+            reward_str = f"  REWARD: {total_reward:+.2f} (last: {self._state.reward_history[-1]:+.2f})"
+            lines.append("║" + reward_str.ljust(W - 2) + "║")
+        
+        # Footer
+        lines.append("╚" + "═" * (W - 2) + "╝")
+        
+        return "\n".join(lines)
+    
+    def _render_text(self) -> str:
+        """Simple text-based render (original implementation)."""
         lines = [
             "=" * 60,
             f"PATCHCASCADE SOC - Turn {self._state.turn_number}/{self._state.max_turns}",

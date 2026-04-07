@@ -54,6 +54,21 @@ PatchCascade SOC provides a **research-grade RL environment** that captures the 
 
 This environment is designed to train agents that could eventually assist human SOC analysts in making high-stakes patching decisions.
 
+### 📚 Theoretical Foundation
+
+Our reward design implements **potential-based reward shaping** (Ng, Harada & Russell, 1999), which provides dense learning signal while preserving optimal policy invariance. The key insight is:
+
+```
+R'(s, a, s') = R(s, a, s') + γΦ(s') - Φ(s)
+```
+
+Where `Φ(s)` is our potential function (total penalty from risk + downtime). This guarantees that any policy optimal under the shaped reward is also optimal under the original sparse reward.
+
+**Key References:**
+- Ng, A. Y., Harada, D., & Russell, S. (1999). *Policy invariance under reward transformations*. ICML.
+- Sutton, R. S., & Barto, A. G. (2018). *Reinforcement Learning: An Introduction*. MIT Press.
+- Mnih, V., et al. (2015). *Human-level control through deep reinforcement learning*. Nature.
+
 ---
 
 ## 🎯 The Problem: The Patching Paradox
@@ -436,6 +451,34 @@ action = PatchCascadeAction(
 result = client.step(action)
 print(f"Reward: {result.reward:.2f}, Done: {result.done}")
 ```
+
+### 🖥️ Rich ASCII Visualization
+
+The environment provides a beautiful ASCII network diagram for debugging:
+
+```
+╔════════════════════════════════════════════════════════════════════╗
+║        🛡️ PatchCascade SOC — Turn 5/50 (Incident Response)         ║
+╠════════════════════════════════════════════════════════════════════╣
+║  NETWORK TOPOLOGY                                                  ║
+║                                                                    ║
+║  🟢 db-primary-0 [ ONLINE ] T1 ⚠️    🔴 app-server-0 [CRASHED ] T2 🔥║
+║  🟢 web-frontend [ ONLINE ] T2 ⚠️    🟡 cache-redis- [SUSPENDED] T3  ║
+║  🔵 auth-server- [PATCHING] T2       🟢 api-gateway  [ ONLINE ] T2  ║
+║                                                                    ║
+║  DEPENDENCIES                                                      ║
+║    web-fronte ━━► app-server                                       ║
+║    app-server ━━► db-primary                                       ║
+║    auth-serve ━━► db-primary                                       ║
+║                                                                    ║
+╠════════════════════════════════════════════════════════════════════╣
+║  VULNS: 3 active (1 CRIT, 2 HIGH) (1 exploited!)                   ║
+║  HEALTH: 4/6 online | 1 crashed | Risk: 12.5 | Downtime: 8.0       ║
+║  REWARD: +15.50 (last: +3.20)                                      ║
+╚════════════════════════════════════════════════════════════════════╝
+```
+
+**Legend:** 🟢 Online | 🔴 Crashed | 🟡 Suspended | 🔵 Patching | ⚠️ Has vulnerability | 🔥 Exploited
 
 ---
 

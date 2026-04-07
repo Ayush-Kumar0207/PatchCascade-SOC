@@ -191,6 +191,33 @@ evaluation:
       higher_is_better: true
 
 # =============================================================================
+# Dynamic Events (Advanced Mechanics)
+# =============================================================================
+dynamic_events:
+  exploit_spreading:
+    description: |
+      Actively exploited vulnerabilities (exploit_in_wild=true) spread to
+      connected nodes after a threshold number of turns. Creates urgency
+      for prioritizing exploited CVEs.
+    applies_to: [hard, incident_response, zero_day]
+    threshold_turns: 3
+    
+  zero_day_injection:
+    description: |
+      New CVEs are dynamically injected at predefined turns (5 and 15),
+      forcing the agent to adapt its strategy mid-episode.
+    applies_to: [zero_day]
+    injection_turns: [5, 15]
+    
+  stochastic_degradation:
+    description: |
+      Nodes with unpatched exploited vulnerabilities have a 3% chance per
+      turn to experience stress-induced crashes. Models real-world uncertainty
+      where compromised systems may fail unpredictably.
+    applies_to: [hard, incident_response]
+    probability: 0.03
+
+# =============================================================================
 # Reward Structure
 # =============================================================================
 rewards:

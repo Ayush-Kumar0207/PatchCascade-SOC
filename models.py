@@ -713,6 +713,15 @@ class PatchCascadeState(BaseModel):
                     "None: Episode still running."
     )
 
+    # --- Messages (for dynamic events and alerts) ---
+
+    messages: list[str] = Field(
+        default_factory=list,
+        description="System messages generated during this turn. "
+                    "Includes dynamic event notifications like exploit spreading, "
+                    "zero-day injections, and stochastic degradation alerts."
+    )
+
 
 # =============================================================================
 # CONVENIENCE TYPE ALIASES
