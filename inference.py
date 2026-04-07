@@ -50,6 +50,9 @@ ENV_SEED = os.environ.get("ENV_SEED")
 # Maximum retries for LLM parsing errors
 MAX_PARSE_RETRIES = 3
 
+# Maximum steps per episode (safety limit to prevent runaway)
+MAX_STEPS = int(os.environ.get("MAX_STEPS", "100"))
+
 
 # =============================================================================
 # SYSTEM PROMPT
@@ -280,8 +283,8 @@ async def run_inference() -> None:
     done = False
     success = False
     
-    # Main loop
-    while not done:
+    # Main loop (with safety limit)
+    while not done and step_num < MAX_STEPS:
         # Get action from LLM
         action = await get_llm_action(llm_client, observation)
         

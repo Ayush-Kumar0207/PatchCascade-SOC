@@ -204,6 +204,24 @@ app.add_middleware(
 # =============================================================================
 
 
+@app.get("/")
+async def root() -> dict:
+    """Root endpoint with API info."""
+    return {
+        "name": "PatchCascade SOC",
+        "version": "1.0.0",
+        "description": "OpenEnv-compliant RL environment for vulnerability patch management",
+        "endpoints": {
+            "health": "GET /health",
+            "reset": "POST /reset",
+            "step": "POST /step",
+            "observation": "GET /observation",
+            "state": "GET /state",
+        },
+        "documentation": "/docs",
+    }
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Health check endpoint for monitoring."""
