@@ -35,8 +35,8 @@ COPY grader.py .
 # Copy tasks package
 COPY tasks/ ./tasks/
 
-# Copy server package (OpenEnv entry point)
-COPY server/ ./server/
+# Copy server CLI package (OpenEnv entry point)
+COPY server_cli/ ./server_cli/
 
 # Copy project config
 COPY pyproject.toml .
