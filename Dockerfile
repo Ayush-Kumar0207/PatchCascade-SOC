@@ -35,8 +35,10 @@ COPY grader.py .
 # Copy tasks package
 COPY tasks/ ./tasks/
 
-# Copy metadata
+# Copy metadata and documentation
 COPY openenv.yaml .
+COPY ARCHITECTURE.md .
+COPY EXAMPLES.md .
 
 # Expose the server port
 EXPOSE 8000

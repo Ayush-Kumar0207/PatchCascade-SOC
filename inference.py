@@ -321,11 +321,11 @@ async def run_inference() -> None:
     """
     # Determine which tasks to run
     if TASK_LEVEL == "all":
-        task_levels = ["easy", "medium", "hard"]
-    elif TASK_LEVEL in ("easy", "medium", "hard"):
+        task_levels = ["easy", "medium", "hard", "incident_response", "zero_day"]
+    elif TASK_LEVEL in ("easy", "medium", "hard", "incident_response", "zero_day"):
         task_levels = [TASK_LEVEL]
     else:
-        print(f"ERROR: Invalid TASK_LEVEL: {TASK_LEVEL}. Use: all, easy, medium, hard", file=sys.stderr)
+        print(f"ERROR: Invalid TASK_LEVEL: {TASK_LEVEL}. Use: all, easy, medium, hard, incident_response, zero_day", file=sys.stderr)
         sys.exit(1)
     
     # Initialize LLM client (shared across tasks)

@@ -45,7 +45,7 @@ from tasks import (
 
 class ResetRequest(BaseModel):
     """Request body for the /reset endpoint."""
-    task_level: Literal["easy", "medium", "hard"] = "easy"
+    task_level: Literal["easy", "medium", "hard", "incident_response", "zero_day"] = "easy"
     seed: int | None = None
 
 
@@ -129,7 +129,7 @@ class PatchCascadeEnvironment(Environment):
     
     def reset(
         self,
-        task_level: Literal["easy", "medium", "hard"] = "easy",
+        task_level: Literal["easy", "medium", "hard", "incident_response", "zero_day"] = "easy",
         seed: int | None = None,
     ) -> PatchCascadeObservation:
         """Reset the environment to a new episode."""

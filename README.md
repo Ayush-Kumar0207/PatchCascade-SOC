@@ -20,17 +20,39 @@ tags:
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
+[![Tasks](https://img.shields.io/badge/Tasks-5_with_Graders-orange?style=for-the-badge)](.)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=for-the-badge)](LICENSE)
 
 **Train AI agents to manage vulnerability patches across enterprise networks—without crashing production.**
 
-[Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [API Reference](#-api-reference) • [Contributors](#-contributors)
+[Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [Grading Logic](#-multi-dimensional-grading) • [API Reference](#-api-reference) • [Contributors](#-contributors)
 
 ---
 
 🏆 **Meta PyTorch OpenEnv Hackathon 2026 Submission**
 
 </div>
+
+---
+
+## 🔬 Research Motivation
+
+Modern enterprise networks face a critical unsolved problem: **how to autonomously patch security vulnerabilities without causing service outages**. This is a fundamentally sequential decision-making problem with:
+
+- **Dependency-aware constraints**: Patching node A may crash nodes B, C, D
+- **Multi-objective optimization**: Minimize both security risk AND downtime
+- **Dynamic threat landscapes**: New zero-day vulnerabilities emerge unpredictably
+- **Cascading failure risks**: One wrong action can take down entire infrastructure
+
+PatchCascade SOC provides a **research-grade RL environment** that captures the full complexity of this problem. Unlike toy grid-worlds or game environments, PatchCascade models real SOC workflows with:
+
+1. **Realistic network topologies** with tiered criticality and service dependencies
+2. **CVSS-based vulnerability scoring** matching industry-standard severity ratings
+3. **Dense reward shaping** that provides continuous learning signal
+4. **Dynamic events** including exploit spreading and zero-day injection
+5. **Multi-dimensional evaluation** across completion, efficiency, safety, and strategy
+
+This environment is designed to train agents that could eventually assist human SOC analysts in making high-stakes patching decisions.
 
 ---
 
@@ -49,7 +71,7 @@ Security teams face an impossible tradeoff:
 
 **The real nightmare?** Modern infrastructure has *dependencies*. Patch your database, and suddenly your web servers crash. Take down authentication, and your entire stack follows. One wrong move triggers a **cascade failure** that costs millions.
 
-**PatchCascade SOC** is an OpenEnv-compatible reinforcement learning environment that trains AI agents to navigate this paradox—learning to patch vulnerabilities *in the optimal order* while minimizing downtime and avoiding catastrophic cascades.
+**PatchCascade SOC** trains AI agents to navigate this paradox—learning to patch vulnerabilities *in the optimal order* while minimizing downtime and avoiding catastrophic cascades.
 
 ---
 
@@ -63,6 +85,9 @@ Security teams face an impossible tradeoff:
 | **Real-World Mapping** | Abstract | Direct SOC workflow simulation |
 | **LLM Compatibility** | Requires embedding | Native JSON schema descriptions |
 | **Dependency Modeling** | None | Full cascade simulation |
+| **Dynamic Events** | Static scenarios | Exploit spreading + zero-day injection |
+| **Evaluation** | Single metric | Multi-dimensional (4 axes) |
+| **Task Curriculum** | 1-2 levels | 5 progressive difficulty levels |
 
 ---
 
@@ -80,24 +105,29 @@ Not all servers are equal. Our environment models real-world criticality:
 ### 🔗 **Dynamic Dependency Graph**
 Real-time cascade failure simulation with hard and soft dependencies:
 
-```
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   Web-01    │─────▶│   App-01    │─────▶│  DB-Primary │
-│  (Tier 2)   │      │  (Tier 2)   │      │   (Tier 1)  │
-└─────────────┘      └─────────────┘      └─────────────┘
-       │                    │                    │
-       │                    │                    ▼
-       │                    │             ┌─────────────┐
-       │                    └────────────▶│  Auth-01    │
-       │                                  │  (Tier 1)   │
-       ▼                                  └─────────────┘
-┌─────────────┐
-│   Web-02    │
-│  (Tier 2)   │
-└─────────────┘
+```mermaid
+graph TD
+    LB[🔵 lb-primary-01<br>Tier 2] -->|soft| W1[🟡 web-frontend-01<br>Tier 2]
+    LB -->|soft| W2[🟡 web-frontend-02<br>Tier 2]
+    W1 -->|hard| A1[🟡 app-server-01<br>Tier 2]
+    W2 -->|hard| A2[🟡 app-server-02<br>Tier 2]
+    A1 -->|hard| DB[🔴 db-primary-01<br>Tier 1 CRITICAL]
+    A2 -->|hard| DB
+    A1 -->|hard| AUTH[🔴 auth-server-01<br>Tier 1 CRITICAL]
+    A2 -->|hard| AUTH
+    DB -->|hard| REP[🔴 db-replica-01<br>Tier 1]
 
-⚠️  If DB-Primary goes OFFLINE → App-01 CRASHES → Web-01 & Web-02 CASCADE CRASH
+    style DB fill:#dc3545,color:white
+    style AUTH fill:#dc3545,color:white
+    style REP fill:#dc3545,color:white
+    style LB fill:#0d6efd,color:white
+    style W1 fill:#ffc107,color:black
+    style W2 fill:#ffc107,color:black
+    style A1 fill:#ffc107,color:black
+    style A2 fill:#ffc107,color:black
 ```
+
+> ⚠️ **If DB-Primary goes OFFLINE → App servers CRASH → Web servers CASCADE CRASH**
 
 ### 📊 **CVSS-Driven Risk Scoring**
 Vulnerabilities are modeled with real-world severity metrics:
@@ -106,6 +136,16 @@ Vulnerabilities are modeled with real-world severity metrics:
 - **CVSS 7.0-8.9** (HIGH): Privilege escalation, data exfiltration  
 - **CVSS 4.0-6.9** (MEDIUM): DoS, information disclosure
 - **Exploit in Wild**: **2x penalty multiplier** for actively exploited CVEs
+
+### 🦠 **Exploit Spreading** *(Advanced Mechanic)*
+In `incident_response` and `hard` modes, exploited CVEs that remain unpatched on ONLINE nodes for 4+ turns **spread to connected nodes** via the dependency graph. This creates urgency and rewards proactive patching.
+
+### 💣 **Dynamic Zero-Day Injection** *(Advanced Mechanic)*
+In `zero_day` mode, new CVEs are injected mid-episode:
+- **Turn 5**: CRITICAL zero-day (CVSS 9.9, actively exploited)
+- **Turn 15**: HIGH severity CVE (CVSS 8.4)
+
+The agent must dynamically adapt its strategy when new threats emerge.
 
 ### 🎮 **Dense Reward Shaping**
 Unlike sparse-reward environments, PatchCascade provides continuous feedback:
@@ -117,7 +157,7 @@ Where Penalty = Risk_Penalty + Downtime_Penalty
 ```
 
 | Event | Reward Impact |
-|-------|--------------|
+|-------|--------------:|
 | Patch a CRITICAL vuln | **+9.0 to +19.6** (doubled if exploit active) |
 | Cause a cascade crash | **-6.0 to -12.0** per crashed node |
 | Invalid action | **-0.5** penalty |
@@ -126,40 +166,203 @@ Where Penalty = Risk_Penalty + Downtime_Penalty
 
 ---
 
-## 🏗️ Architecture
+## 📐 Mathematical Formulation
+
+### State Space
+
+The environment state at turn *t* is defined as:
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                     PatchCascade SOC Stack                     │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│  │  inference.py │───▶│   client.py  │───▶│   server.py  │     │
-│  │  (LLM Agent)  │    │ (HTTP Client)│    │  (FastAPI)   │     │
-│  └──────────────┘    └──────────────┘    └──────────────┘     │
-│                                                 │              │
-│                                                 ▼              │
-│                                          ┌──────────────┐     │
-│                                          │environment.py│     │
-│                                          │ (Core Logic) │     │
-│                                          └──────────────┘     │
-│                                                 │              │
-│                                                 ▼              │
-│                                          ┌──────────────┐     │
-│                                          │  models.py   │     │
-│                                          │  (Pydantic)  │     │
-│                                          └──────────────┘     │
-│                                                                │
-├────────────────────────────────────────────────────────────────┤
-│  🐳 Docker │ 🚀 Uvicorn │ 📡 OpenEnv Protocol │ 🤗 HF Spaces  │
-└────────────────────────────────────────────────────────────────┘
+S_t = (N, V_t, D, H_t)
+
+N = {n_i} — Set of server nodes with (hostname, tier, state, services)
+V_t = {v_j} — Set of active vulnerabilities at turn t
+D = {d_k} — Dependency graph edges (immutable)
+H_t — Aggregate health metrics at turn t
+```
+
+### Reward Function
+
+The reward at each step uses **potential-based reward shaping**:
+
+```
+R_t = Φ(S_{t-1}) - Φ(S_t) + R_terminal
+
+Where:
+  Φ(S) = Risk_Penalty(S) + Downtime_Penalty(S)
+  
+  Risk_Penalty = Σ_j [ cvss_j × |affected_online_j| × (2 if exploit_in_wild_j else 1) ]
+  
+  Downtime_Penalty = Σ_i [ tier_mult(n_i) × (2 if crashed(n_i) else 1) ]   ∀ n_i ∉ ONLINE
+  
+  R_terminal = { +50 if all vulns patched,  -100 if all nodes crashed,  0 otherwise }
+```
+
+This formulation guarantees that **any action reducing total penalty yields positive reward**, providing dense learning signal throughout the episode.
+
+### Normalization
+
+Final scores are normalized to [0, 1] for comparability:
+
+```
+Score = clamp((Σ R_t - R_min) / (R_max - R_min), 0.001, 0.999)
+
+Where R_min = -300.0, R_max = 50.0
+```
+
+---
+
+## 🎮 The Challenge: 5-Level Task Curriculum
+
+PatchCascade offers **five progressive difficulty levels**, each building on the skills learned in previous levels:
+
+```mermaid
+graph LR
+    E["🟢 Easy<br>Basic Patching"] --> M["🟡 Medium<br>Dependencies"]
+    M --> H["🔴 Hard<br>Complex Graph"]
+    H --> IR["🟣 Incident Response<br>Active Breach"]
+    IR --> ZD["⚫ Zero-Day<br>Dynamic Threats"]
+
+    style E fill:#198754,color:white
+    style M fill:#ffc107,color:black
+    style H fill:#dc3545,color:white
+    style IR fill:#6f42c1,color:white
+    style ZD fill:#212529,color:white
+```
+
+### 🟢 Level 1: Easy Mode
+> *"Learn the basics"*
+
+| Parameter | Value |
+|-----------|-------|
+| Nodes | 3-5 servers |
+| Dependencies | None |
+| Vulnerabilities | 1 (Medium/High) |
+| Max Turns | 30 |
+| Key Skill | Basic patch sequencing |
+
+### 🟡 Level 2: Medium Mode
+> *"Handle dependencies"*
+
+| Parameter | Value |
+|-----------|-------|
+| Nodes | 5-8 servers |
+| Dependencies | Linear chain (Web → App → DB) |
+| Vulnerabilities | 2 (including 1 on Tier 1) |
+| Max Turns | 50 |
+| Key Skill | Suspend-patch-resume workflow |
+
+### 🔴 Level 3: Hard Mode
+> *"Survive the chaos"*
+
+| Parameter | Value |
+|-----------|-------|
+| Nodes | 10-15 servers |
+| Dependencies | Complex graph (LB → Web → App → DB + Auth) |
+| Vulnerabilities | 5 (2 actively exploited CRITICAL) |
+| Max Turns | 100 |
+| Key Skill | Multi-objective optimization under pressure |
+
+### 🟣 Level 4: Incident Response *(New!)*
+> *"Triage an active breach"*
+
+| Parameter | Value |
+|-----------|-------|
+| Nodes | 8 servers (2 pre-CRASHED) |
+| Dependencies | Complex with hard + soft edges |
+| Vulnerabilities | 3 (2 actively exploited, spreading!) |
+| Max Turns | 60 |
+| Key Mechanic | **Exploit spreading** — unpatched exploited CVEs infect connected nodes every 4 turns |
+| Key Skill | Damage assessment, recovery-under-pressure, threat containment |
+
+### ⚫ Level 5: Zero-Day Cascade *(New!)*
+> *"Adapt or die"*
+
+| Parameter | Value |
+|-----------|-------|
+| Nodes | 10 servers |
+| Dependencies | Multi-layer (Web → Gateway → App → DB/Auth) |
+| Vulnerabilities | 2 initial + **2 dynamically injected** |
+| Max Turns | 80 |
+| Key Mechanic | **Zero-day injection** — new CRITICAL CVE at turn 5, HIGH CVE at turn 15 |
+| Key Skill | Adaptive planning, strategy revision, reprioritization |
+
+---
+
+## 📊 Multi-Dimensional Grading
+
+Unlike simple pass/fail or single-metric grading, PatchCascade evaluates agents across **four orthogonal dimensions**:
+
+```mermaid
+graph TB
+    subgraph "Composite Score (0.0 - 1.0)"
+        C["📋 Completion (40%)<br>Were all vulns patched?"]
+        E["⚡ Efficiency (20%)<br>Steps vs. optimal?"]
+        S["🛡️ Safety (20%)<br>Cascades avoided?"]
+        ST["🧠 Strategy (20%)<br>Smart decisions?"]
+    end
+
+    C --> F["Final Score = Σ w_i × d_i"]
+    E --> F
+    S --> F
+    ST --> F
+
+    style C fill:#198754,color:white
+    style E fill:#0d6efd,color:white
+    style S fill:#dc3545,color:white
+    style ST fill:#6f42c1,color:white
+    style F fill:#ffc107,color:black
+```
+
+| Dimension | Weight | What It Measures | Perfect Score |
+|-----------|--------|-----------------|---------------|
+| **Completion** | 40% | Fraction of vulnerabilities patched | All CVEs resolved |
+| **Efficiency** | 20% | Steps taken vs. theoretical minimum | Completed at or near optimal_steps |
+| **Safety** | 20% | Cascade failures avoided | Zero cascade failures |
+| **Strategy** | 20% | Decision quality (exploit priority, dependency ordering, action validity) | Exploited CVEs patched first, correct suspend order |
+
+> **Note**: Weights vary by task type. Incident Response uses **safety-focused** weights (35% safety), while Zero-Day uses **efficiency-focused** weights (30% efficiency).
+
+### Scoring Examples
+
+| Agent Behavior | Completion | Efficiency | Safety | Strategy | **Final** |
+|---------------|-----------|-----------|--------|----------|-----------|
+| Perfect optimal agent | 1.00 | 1.00 | 1.00 | 1.00 | **1.000** |
+| Patches everything, slowly | 1.00 | 0.40 | 1.00 | 0.80 | **0.84** |
+| Fast but causes cascades | 0.80 | 0.90 | 0.30 | 0.50 | **0.60** |
+| Random agent | 0.20 | 0.10 | 0.30 | 0.30 | **0.22** |
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+graph TB
+    subgraph "PatchCascade SOC Stack"
+        INF["inference.py<br>🤖 LLM Agent"] --> CLI["client.py<br>📡 HTTP Client"]
+        CLI --> SRV["server.py<br>🚀 FastAPI"]
+        SRV --> ENV["environment.py<br>⚙️ Core Logic"]
+        ENV --> MOD["models.py<br>📦 Pydantic Schemas"]
+        SRV --> GRD["grader.py<br>📊 Multi-Dim Grading"]
+        SRV --> TSK["tasks/<br>📋 5 Task Definitions"]
+    end
+
+    style INF fill:#0d6efd,color:white
+    style CLI fill:#198754,color:white
+    style SRV fill:#dc3545,color:white
+    style ENV fill:#ffc107,color:black
+    style MOD fill:#6f42c1,color:white
+    style GRD fill:#fd7e14,color:white
+    style TSK fill:#20c997,color:white
 ```
 
 | Component | Purpose |
-|-----------|---------|
+|-----------|---------| 
 | `models.py` | Pydantic schemas with rich `Field()` descriptions for LLM comprehension |
-| `environment.py` | Core state machine: reset, step, cascade logic, reward calculation |
-| `server.py` | FastAPI wrapper exposing `/reset`, `/step`, `/observation` endpoints |
+| `environment.py` | Core state machine: reset, step, cascade logic, dynamic events, reward calculation |
+| `server.py` | FastAPI wrapper exposing `/reset`, `/step`, `/observation`, `/grade` endpoints |
+| `grader.py` | Multi-dimensional programmatic graders (completion, efficiency, safety, strategy) |
+| `tasks/` | 5 task definitions with individual grader configurations and success criteria |
 | `client.py` | Async HTTP client with type-safe request/response handling |
 | `inference.py` | Baseline LLM agent using OpenAI-compatible API |
 
@@ -210,59 +413,54 @@ from client import PatchCascadeLocalClient, PatchCascadeAction
 
 # Initialize local client (no server needed)
 client = PatchCascadeLocalClient()
-obs = client.reset(task_level="easy")
+
+# Try the new Incident Response mode!
+obs = client.reset(task_level="incident_response")
 
 print(f"Nodes: {[n.hostname for n in obs.nodes]}")
+print(f"Crashed: {[n.hostname for n in obs.nodes if n.state == 'crashed']}")
 print(f"Vulns: {[v.cve_id for v in obs.vulnerabilities]}")
+print(f"Messages: {obs.messages}")
+# Output: "⚠️ ACTIVE BREACH: Multiple nodes are already compromised..."
 
-# Apply a patch
+# Recover a crashed node first
+from models import ActionType
 action = PatchCascadeAction(
-    action_type="apply_patch",
-    target="web-frontend-01",
-    cve_id="CVE-2024-1234"
+    action_type=ActionType.RESUME_SERVICE,
+    target="db-primary-01",
+    reason="Recover crashed database to restore app layer"
 )
-obs, reward, done, truncated, info = client.step(action)
-print(f"Reward: {reward:.2f}, Done: {done}")
+result = client.step(action)
+print(f"Reward: {result.reward:.2f}, Done: {result.done}")
 ```
 
 ---
 
-## 🎮 The Challenge
+## 🎯 Example: Optimal Agent Strategy (Medium Mode)
 
-PatchCascade offers three difficulty levels, each testing different agent capabilities:
+Here's a step-by-step walkthrough of an optimal agent solving the medium task:
 
-### 🟢 Easy Mode
-> *"Learn the basics"*
+```
+Turn 0: Observe — 6 nodes, 2 CVEs (db-primary-01 has CVE-2024-2001, web frontends have CVE-2024-2002)
+         Dependencies: web → app → db-primary-01
 
-| Parameter | Value |
-|-----------|-------|
-| Nodes | 3-5 servers |
-| Dependencies | None |
-| Vulnerabilities | 1 (Medium/High) |
-| Max Turns | 30 |
-| Key Skill | Basic patch sequencing |
+Turn 1: suspend_service(web-frontend-01)    — Protect from cascade
+Turn 2: suspend_service(web-frontend-02)    — Protect from cascade  
+Turn 3: suspend_service(app-server-01)      — Protect from cascade
+Turn 4: suspend_service(app-server-02)      — Protect from cascade
+Turn 5: suspend_service(db-primary-01)      — Required: Tier 1 must be SUSPENDED
+Turn 6: apply_patch(db-primary-01, CVE-2024-2001) — Patch critical DB vuln
+         [Patch completes next turn → db-primary-01 returns to ONLINE]
+Turn 7: resume_service(app-server-01)       — DB is online, safe to resume
+Turn 8: resume_service(app-server-02)       — Resume second app server
+Turn 9: resume_service(web-frontend-01)     — Resume web (still has CVE-2024-2002)
+Turn 10: apply_patch(web-frontend-01, CVE-2024-2002) — Patch web vuln
+Turn 11: resume_service(web-frontend-02)
+Turn 12: apply_patch(web-frontend-02, CVE-2024-2002) — Patch second web server
 
-### 🟡 Medium Mode
-> *"Handle dependencies"*
-
-| Parameter | Value |
-|-----------|-------|
-| Nodes | 5-8 servers |
-| Dependencies | Linear chain (Web → App → DB) |
-| Vulnerabilities | 2 (including 1 on Tier 1) |
-| Max Turns | 50 |
-| Key Skill | Suspend-patch-resume workflow |
-
-### 🔴 Hard Mode
-> *"Survive the chaos"*
-
-| Parameter | Value |
-|-----------|-------|
-| Nodes | 10-15 servers |
-| Dependencies | Complex graph (LB → Web → App → DB + Auth) |
-| Vulnerabilities | 5 (2 actively exploited CRITICAL) |
-| Max Turns | 100 |
-| Key Skill | Multi-objective optimization under pressure |
+Result: All patched in 12 steps, 0 cascade failures, 0 invalid actions
+Score: completion=1.0, efficiency=0.85, safety=1.0, strategy=1.0 → Final: 0.95
+```
 
 ---
 
@@ -273,7 +471,7 @@ Initialize a new episode.
 
 ```json
 // Request
-{ "task_level": "medium", "seed": 42 }
+{ "task_level": "incident_response", "seed": 42 }
 
 // Response
 { "observation": { "nodes": [...], "vulnerabilities": [...], ... } }
@@ -296,9 +494,18 @@ Execute an action.
   "reward": 7.5,
   "done": false,
   "truncated": false,
-  "info": { "valid": true, "cascade_failures": 0 }
+  "info": { "valid": true, "cascade_failures": 0, "total_cascade_failures": 0 }
 }
 ```
+
+### `GET /tasks`
+List all 5 tasks with grader information.
+
+### `POST /grade/{task_id}`
+Grade an episode using multi-dimensional programmatic grading.
+
+### `GET /metadata`
+Get full environment metadata including all tasks, graders, and schemas.
 
 ### Action Types
 
@@ -312,35 +519,39 @@ Execute an action.
 
 ---
 
+## 🧠 Agent Strategy Tips
+
+1. **Suspend dependents first**: Before patching a Tier 1 node, suspend all nodes that depend on it
+2. **Prioritize exploited CVEs**: `exploit_in_wild=true` means 2x risk penalty per turn — and in advanced modes, they **spread** to connected nodes
+3. **Batch patches efficiently**: While one node is PATCHING, work on independent branches
+4. **Don't fear downtime**: A controlled SUSPENDED state is better than an uncontrolled CRASH
+5. **Watch for dynamic events**: In zero-day mode, new CVEs appear at turns 5 and 15 — be ready to reprioritize
+6. **Recover before patching**: In incident response mode, crashed nodes must be resumed before they can be patched
+
+---
+
 ## 📈 Evaluation Metrics
 
 | Metric | Description | Goal |
 |--------|-------------|------|
-| **Success Rate** | % of episodes with all CVEs patched | Maximize |
-| **Total Reward** | Cumulative reward across episode | Maximize |
-| **Steps to Completion** | Turns needed to win | Minimize |
-| **Cascade Failures** | Nodes crashed from dependencies | Minimize |
+| **Composite Score** | Weighted multi-dimensional score | Maximize (0.0-1.0) |
+| **Completion** | % of vulnerabilities patched | Maximize |
+| **Efficiency** | Steps vs. theoretical optimum | Minimize steps |
+| **Safety** | Cascade failures avoided | Zero cascades |
+| **Strategy** | Decision quality | Maximize |
 
 ### 📊 Baseline Scores (Reference)
 
-Based on initial evaluations using our `inference.py` baseline agent on the **Medium Task** (max 50 steps).
+Based on evaluations using our `inference.py` baseline agent on the **Medium Task**.
 
 > **Note:** Scores are normalized to the 0.0–1.0 range per hackathon requirements.
 
-| Agent Type | Normalized Score | Behavior Profile |
-|------------|------------------|------------------|
-| **Random Action** | `0.00` to `0.43` | Usually triggers cascade failures by suspending Tier 1 nodes without warning. |
-| **Simple Heuristic** | `0.89` to `0.91` | Patches critical vulnerabilities but incurs heavy downtime penalties. |
-| **Optimal Target (RL)** | `1.00` (Max) | Patches all vulnerabilities in the correct dependency order with minimal downtime. |
-
----
-
-## 🧠 Agent Strategy Tips
-
-1. **Suspend dependents first**: Before patching a Tier 1 node, suspend all nodes that depend on it
-2. **Prioritize exploited CVEs**: `exploit_in_wild=true` means 2x risk penalty per turn
-3. **Batch patches efficiently**: While one node is PATCHING, work on independent branches
-4. **Don't fear downtime**: A controlled SUSPENDED state is better than an uncontrolled CRASH
+| Agent Type | Score | Behavior Profile |
+|------------|-------|------------------|
+| **Random Action** | `0.10–0.25` | Triggers cascade failures, wastes turns on invalid actions |
+| **Simple Heuristic** | `0.60–0.75` | Patches vulns but incurs avoidable downtime and cascades |
+| **LLM Agent (baseline)** | `0.80–0.90` | Good prioritization, occasional suboptimal ordering |
+| **Optimal (RL-trained)** | `0.95–1.00` | Perfect dependency ordering, minimal downtime |
 
 ---
 

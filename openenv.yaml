@@ -2,6 +2,7 @@
 # PatchCascade SOC - OpenEnv Configuration
 # =============================================================================
 # OpenEnv spec_version 1 compliant configuration for the Meta PyTorch Hackathon.
+# Features 5 progressive tasks with multi-dimensional programmatic graders.
 # =============================================================================
 
 spec_version: 1
@@ -13,13 +14,23 @@ port: 8000
 
 # Environment metadata
 display_name: "PatchCascade SOC"
-version: "1.0.0"
+version: "2.0.0"
 description: |
   A Security Operations Center (SOC) simulation environment where an agent
   manages vulnerability patches across a network of interdependent servers.
   The agent must balance patching critical vulnerabilities (reducing risk)
   with keeping services online (reducing downtime), while avoiding cascade
   failures caused by dependency violations.
+  
+  Features 5 progressive difficulty levels forming a curriculum:
+  - Easy: Basic patching
+  - Medium: Dependency-aware patching
+  - Hard: Multi-objective optimization
+  - Incident Response: Active breach triage
+  - Zero-Day Cascade: Adaptive planning under dynamic threats
+  
+  Advanced mechanics include exploit spreading, dynamic CVE injection,
+  and multi-dimensional grading (completion, efficiency, safety, strategy).
 
 # Author information
 author: "Ayush Kumar & Ravi Prashant (PatchCascade SOC Team)"
@@ -33,14 +44,15 @@ grader_module: grader
 grader_class: TaskGrader
 
 # =============================================================================
-# Tasks with Graders (Required for hackathon: at least 3 tasks with graders)
+# Tasks with Graders (5 tasks — exceeding the 3-task minimum)
 # =============================================================================
-# Each task defines a difficulty level with an associated programmatic grader
-# that computes a normalized score (0.0-1.0) based on agent performance.
+# Each task defines a difficulty level with a multi-dimensional programmatic
+# grader that scores agents across 4 dimensions: completion, efficiency,
+# safety, and strategy. Scores are normalized to [0.0, 1.0].
 tasks:
   - id: easy
     name: "Easy Mode"
-    description: "3-5 nodes, no dependencies, 1 vulnerability. Beginner-friendly scenario."
+    description: "3-5 nodes, no dependencies, 1 vulnerability. Beginner-friendly scenario for learning basic patch mechanics."
     max_turns: 30
     difficulty: 1
     has_grader: true
@@ -49,20 +61,20 @@ tasks:
       module: grader
       class: EasyGrader
       function: grade
-      description: "Programmatic grader — normalized cumulative reward"
+      description: "Multi-dimensional grader — completion (40%), efficiency (20%), safety (20%), strategy (20%)"
       success_threshold: 0.5
       scoring:
-        method: normalized_reward
-        min_reward: -300.0
-        max_reward: 50.0
-        formula: "(total_reward - min_reward) / (max_reward - min_reward)"
+        method: multi_dimensional
+        dimensions: [completion, efficiency, safety, strategy]
+        weights: {completion: 0.40, efficiency: 0.20, safety: 0.20, strategy: 0.20}
+        formula: "score = 0.40*completion + 0.20*efficiency + 0.20*safety + 0.20*strategy"
       success_criteria:
         all_vulnerabilities_patched: true
         no_catastrophic_failures: true
 
   - id: medium
     name: "Medium Mode"
-    description: "5-8 nodes, linear dependency chain, 2 vulnerabilities. Requires dependency awareness."
+    description: "5-8 nodes, linear dependency chain (Web→App→DB), 2 vulnerabilities. Requires suspend-patch-resume workflow for Tier 1 nodes."
     max_turns: 50
     difficulty: 2
     has_grader: true
@@ -71,13 +83,13 @@ tasks:
       module: grader
       class: MediumGrader
       function: grade
-      description: "Programmatic grader — normalized cumulative reward"
+      description: "Multi-dimensional grader — completion (40%), efficiency (20%), safety (20%), strategy (20%)"
       success_threshold: 0.6
       scoring:
-        method: normalized_reward
-        min_reward: -300.0
-        max_reward: 50.0
-        formula: "(total_reward - min_reward) / (max_reward - min_reward)"
+        method: multi_dimensional
+        dimensions: [completion, efficiency, safety, strategy]
+        weights: {completion: 0.40, efficiency: 0.20, safety: 0.20, strategy: 0.20}
+        formula: "score = 0.40*completion + 0.20*efficiency + 0.20*safety + 0.20*strategy"
       success_criteria:
         all_vulnerabilities_patched: true
         no_catastrophic_failures: true
@@ -85,7 +97,7 @@ tasks:
 
   - id: hard
     name: "Hard Mode"
-    description: "10-15 nodes, complex dependency graph, multiple critical vulnerabilities. Expert level."
+    description: "10-15 nodes, complex dependency graph (LB→Web→App→DB+Auth), 5 vulnerabilities (2 actively exploited). Expert-level multi-objective optimization."
     max_turns: 100
     difficulty: 3
     has_grader: true
@@ -94,18 +106,66 @@ tasks:
       module: grader
       class: HardGrader
       function: grade
-      description: "Programmatic grader — normalized cumulative reward"
+      description: "Multi-dimensional grader — completion (40%), efficiency (20%), safety (20%), strategy (20%)"
       success_threshold: 0.7
       scoring:
-        method: normalized_reward
-        min_reward: -300.0
-        max_reward: 50.0
-        formula: "(total_reward - min_reward) / (max_reward - min_reward)"
+        method: multi_dimensional
+        dimensions: [completion, efficiency, safety, strategy]
+        weights: {completion: 0.40, efficiency: 0.20, safety: 0.20, strategy: 0.20}
+        formula: "score = 0.40*completion + 0.20*efficiency + 0.20*safety + 0.20*strategy"
       success_criteria:
         all_vulnerabilities_patched: true
         no_catastrophic_failures: true
         respect_dependencies: true
         minimize_downtime: true
+
+  - id: incident_response
+    name: "Incident Response"
+    description: "Active breach scenario: 8 nodes (2 pre-crashed), 3 vulnerabilities (2 exploited), exploit spreading mechanic. Tests triage, recovery, and threat containment under pressure."
+    max_turns: 60
+    difficulty: 4
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: IncidentResponseGrader
+      function: grade
+      description: "Safety-focused multi-dimensional grader — completion (30%), efficiency (15%), safety (35%), strategy (20%)"
+      success_threshold: 0.5
+      scoring:
+        method: multi_dimensional
+        dimensions: [completion, efficiency, safety, strategy]
+        weights: {completion: 0.30, efficiency: 0.15, safety: 0.35, strategy: 0.20}
+        formula: "score = 0.30*completion + 0.15*efficiency + 0.35*safety + 0.20*strategy"
+      success_criteria:
+        all_vulnerabilities_patched: true
+        all_crashed_nodes_recovered: true
+        no_additional_cascade_failures: true
+        exploit_spreading_contained: true
+
+  - id: zero_day
+    name: "Zero-Day Cascade"
+    description: "Dynamic threat injection: 10 nodes, 2 initial + 2 dynamically injected CVEs (at turns 5 and 15). Tests adaptive planning and strategy revision under evolving threat conditions."
+    max_turns: 80
+    difficulty: 5
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: ZeroDayGrader
+      function: grade
+      description: "Efficiency-focused multi-dimensional grader — completion (35%), efficiency (30%), safety (15%), strategy (20%)"
+      success_threshold: 0.6
+      scoring:
+        method: multi_dimensional
+        dimensions: [completion, efficiency, safety, strategy]
+        weights: {completion: 0.35, efficiency: 0.30, safety: 0.15, strategy: 0.20}
+        formula: "score = 0.35*completion + 0.30*efficiency + 0.15*safety + 0.20*strategy"
+      success_criteria:
+        all_vulnerabilities_patched: true
+        no_catastrophic_failures: true
+        dynamic_cves_handled: true
+        strategy_adapted: true
 
 # =============================================================================
 # Evaluation Configuration
@@ -113,19 +173,22 @@ tasks:
 evaluation:
   default_task: "medium"
   metrics:
-    - name: "normalized_score"
-      description: "Normalized reward score (0.0-1.0)"
+    - name: "composite_score"
+      description: "Weighted multi-dimensional score (completion, efficiency, safety, strategy)"
       higher_is_better: true
       primary: true
-    - name: "success_rate"
-      description: "Percentage of episodes where all vulnerabilities are patched"
+    - name: "completion_score"
+      description: "Fraction of vulnerabilities successfully patched"
       higher_is_better: true
-    - name: "steps_to_completion"
-      description: "Number of steps taken to complete (lower is better)"
-      higher_is_better: false
-    - name: "cascade_failures"
-      description: "Total nodes crashed due to dependency violations"
-      higher_is_better: false
+    - name: "efficiency_score"
+      description: "Steps taken relative to theoretical optimum"
+      higher_is_better: true
+    - name: "safety_score"
+      description: "Cascade failures avoided, no catastrophic events"
+      higher_is_better: true
+    - name: "strategy_score"
+      description: "Quality of decision-making: exploit prioritization, dependency ordering"
+      higher_is_better: true
 
 # =============================================================================
 # Reward Structure
@@ -202,8 +265,12 @@ tags:
   - security
   - network-management
   - dependency-graph
+  - dynamic-events
+  - exploit-spreading
+  - zero-day-simulation
   - turn-based
   - json-observation
   - json-action
   - llm-agent
+  - multi-dimensional-grading
   - hackathon

@@ -5,9 +5,19 @@ PatchCascade SOC - Environment Core Logic
 This module implements the PatchCascadeEnv class, the core reinforcement learning
 environment for the PatchCascade SOC simulation. It provides:
 
-- `reset(task_level)`: Initialize episodes at easy/medium/hard difficulty
+- `reset(task_level)`: Initialize episodes at 5 difficulty levels:
+    - easy: 3-5 nodes, no dependencies, 1 vulnerability
+    - medium: 5-8 nodes, linear dependency chain, 2 vulnerabilities
+    - hard: 10-15 nodes, complex graph, multiple critical vulns
+    - incident_response: Active breach scenario with pre-crashed nodes
+    - zero_day: Dynamic threat injection with exploit spreading
 - `step(action)`: Process agent actions and advance simulation state
 - `get_observation()`: Generate agent-visible observation from internal state
+
+Advanced Features:
+- Dynamic Event System: Events fire at configurable turns (new CVEs, exploit spreading)
+- Exploit Spreading: Unpatched exploited CVEs can spread to connected nodes
+- Multi-objective Optimization: Balance risk, downtime, and cascade avoidance
 
 The environment follows OpenEnv conventions and returns standard
 (observation, reward, done, info) tuples from step().
@@ -73,7 +83,16 @@ MAX_TURNS_BY_DIFFICULTY: dict[str, int] = {
     "easy": 30,
     "medium": 50,
     "hard": 100,
+    "incident_response": 60,
+    "zero_day": 80,
 }
+
+# Exploit spreading: after this many turns unpatched on an ONLINE node,
+# an exploit_in_wild vulnerability spreads to a connected node
+EXPLOIT_SPREAD_THRESHOLD: int = 4
+
+# Dynamic event injection turns for zero_day task
+ZERO_DAY_EVENT_TURNS: list[int] = [5, 15]
 
 
 # =============================================================================
@@ -134,6 +153,12 @@ class PatchCascadeEnv:
         self._pending_patches: dict[str, str] = {}  # hostname -> cve_id being patched
         self._last_action_result: str | None = None
         self._messages: list[str] = []
+        self._task_level: str = "easy"
+        self._exploit_turn_tracker: dict[str, int] = {}  # cve_id -> turns unpatched on online node
+        self._cascade_failure_count: int = 0  # Total cascades this episode
+        self._invalid_action_count: int = 0  # Total invalid actions this episode
+        self._initial_vuln_count: int = 0  # Vulnerabilities at episode start
+        self._dynamic_events_fired: list[str] = []  # Track which events have fired
     
     @property
     def state(self) -> PatchCascadeState:
@@ -148,7 +173,7 @@ class PatchCascadeEnv:
     
     def reset(
         self,
-        task_level: Literal["easy", "medium", "hard"] = "easy",
+        task_level: Literal["easy", "medium", "hard", "incident_response", "zero_day"] = "easy",
         seed: int | None = None,
     ) -> PatchCascadeObservation:
         """
@@ -159,6 +184,8 @@ class PatchCascadeEnv:
                 - "easy": 3-5 nodes, no dependencies, 1 vulnerability
                 - "medium": 5-8 nodes, linear dependency chain, 2 vulnerabilities
                 - "hard": 10-15 nodes, complex graph, multiple critical vulns
+                - "incident_response": Active breach with pre-crashed nodes, exploit spreading
+                - "zero_day": Dynamic CVE injection at turns 5 and 15
             seed: Optional seed for this episode (overrides constructor seed).
         
         Returns:
@@ -168,6 +195,7 @@ class PatchCascadeEnv:
             self._rng = random.Random(seed)
         
         episode_seed = self._rng.randint(0, 2**31 - 1)
+        self._task_level = task_level
         
         # Generate scenario based on difficulty
         if task_level == "easy":
@@ -179,8 +207,17 @@ class PatchCascadeEnv:
         elif task_level == "hard":
             nodes, dependencies, vulnerabilities = self._generate_hard_scenario()
             max_turns = MAX_TURNS_BY_DIFFICULTY["hard"]
+        elif task_level == "incident_response":
+            nodes, dependencies, vulnerabilities = self._generate_incident_response_scenario()
+            max_turns = MAX_TURNS_BY_DIFFICULTY["incident_response"]
+        elif task_level == "zero_day":
+            nodes, dependencies, vulnerabilities = self._generate_zero_day_scenario()
+            max_turns = MAX_TURNS_BY_DIFFICULTY["zero_day"]
         else:
-            raise ValueError(f"Invalid task_level: {task_level}. Must be 'easy', 'medium', or 'hard'.")
+            raise ValueError(
+                f"Invalid task_level: {task_level}. "
+                f"Must be one of: easy, medium, hard, incident_response, zero_day."
+            )
         
         # Calculate initial health metrics
         health = self._calculate_health_metrics(nodes, vulnerabilities, turn_number=0)
@@ -204,7 +241,22 @@ class PatchCascadeEnv:
         self._last_total_penalty = self._calculate_total_penalty(nodes, vulnerabilities)
         self._pending_patches = {}
         self._last_action_result = None
-        self._messages = [f"Episode started ({task_level} difficulty). {len(vulnerabilities)} vulnerabilities detected."]
+        self._exploit_turn_tracker = {}
+        self._cascade_failure_count = 0
+        self._invalid_action_count = 0
+        self._initial_vuln_count = len(vulnerabilities)
+        self._dynamic_events_fired = []
+        
+        # Build task-specific intro messages
+        intro_msgs = [f"Episode started ({task_level} difficulty). {len(vulnerabilities)} vulnerabilities detected."]
+        if task_level == "incident_response":
+            intro_msgs.append("⚠️ ACTIVE BREACH: Multiple nodes are already compromised. Triage immediately!")
+            intro_msgs.append("⚠️ Exploits are spreading — unpatched exploited CVEs will infect connected nodes.")
+        elif task_level == "zero_day":
+            intro_msgs.append("🔍 Intel reports suggest undisclosed zero-day vulnerabilities may emerge during this operation.")
+            intro_msgs.append("📡 Stay alert for dynamic threat advisories.")
+        
+        self._messages = intro_msgs
         
         return self.get_observation()
     
@@ -609,6 +661,279 @@ class PatchCascadeEnv:
         
         return nodes, dependencies, vulnerabilities
     
+    def _generate_incident_response_scenario(
+        self,
+    ) -> tuple[list[ServerNode], list[Dependency], list[Vulnerability]]:
+        """
+        Generate an incident response scenario: active breach in progress.
+        
+        Key Features:
+        - 8 nodes with 2 already CRASHED (simulating ongoing attack)
+        - Complex dependency graph with both hard and soft dependencies
+        - 3 vulnerabilities, 2 actively exploited
+        - Exploit spreading: unpatched exploited CVEs infect connected nodes
+        - Agent must triage: recover crashed nodes AND patch vulnerabilities
+        
+        This tests the agent's ability to:
+        1. Assess damage and prioritize recovery vs. patching
+        2. Isolate compromised nodes to prevent further spread
+        3. Work under pressure with degraded infrastructure
+        """
+        nodes = [
+            # Tier 1 - Database (CRASHED - breach entry point)
+            ServerNode(
+                hostname="db-primary-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.CRITICAL,
+                state=NodeState.CRASHED,  # Already compromised!
+                services=["postgresql", "patroni"],
+            ),
+            # Tier 1 - Auth server (still online but vulnerable)
+            ServerNode(
+                hostname="auth-server-01",
+                os="RHEL 8.9",
+                tier=CriticalityTier.CRITICAL,
+                state=NodeState.ONLINE,
+                services=["keycloak", "java"],
+            ),
+            # Tier 2 - App servers (one crashed from DB cascade)
+            ServerNode(
+                hostname="app-server-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.CRASHED,  # Cascaded from DB crash
+                services=["python3", "django", "gunicorn"],
+            ),
+            ServerNode(
+                hostname="app-server-02",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["python3", "django", "gunicorn"],
+            ),
+            # Tier 2 - Web servers
+            ServerNode(
+                hostname="web-frontend-01",
+                os="RHEL 8.9",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["nginx", "nodejs"],
+            ),
+            ServerNode(
+                hostname="web-frontend-02",
+                os="RHEL 8.9",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["nginx", "nodejs"],
+            ),
+            # Tier 3 - Supporting
+            ServerNode(
+                hostname="cache-redis-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.STANDARD,
+                state=NodeState.ONLINE,
+                services=["redis-cluster"],
+            ),
+            ServerNode(
+                hostname="monitoring-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.STANDARD,
+                state=NodeState.ONLINE,
+                services=["prometheus", "grafana"],
+            ),
+        ]
+        
+        dependencies = [
+            Dependency(node="app-server-01", depends_on="db-primary-01", dependency_type="hard",
+                       description="App server requires database for queries"),
+            Dependency(node="app-server-02", depends_on="db-primary-01", dependency_type="hard",
+                       description="App server requires database for queries"),
+            Dependency(node="app-server-01", depends_on="auth-server-01", dependency_type="hard",
+                       description="App requires auth for request validation"),
+            Dependency(node="app-server-02", depends_on="auth-server-01", dependency_type="hard",
+                       description="App requires auth for request validation"),
+            Dependency(node="web-frontend-01", depends_on="app-server-01", dependency_type="hard",
+                       description="Frontend proxies to app backend"),
+            Dependency(node="web-frontend-02", depends_on="app-server-02", dependency_type="hard",
+                       description="Frontend proxies to app backend"),
+            Dependency(node="cache-redis-01", depends_on="app-server-01", dependency_type="soft",
+                       description="Cache serves app queries (degraded without)"),
+        ]
+        
+        vulnerabilities = [
+            Vulnerability(
+                cve_id="CVE-2024-4001",
+                severity=SeverityLevel.CRITICAL,
+                cvss_score=9.8,
+                affected_hosts=["db-primary-01"],
+                description="Remote code execution in PostgreSQL — BREACH ENTRY POINT",
+                patch_available=True,
+                exploit_in_wild=True,
+            ),
+            Vulnerability(
+                cve_id="CVE-2024-4002",
+                severity=SeverityLevel.CRITICAL,
+                cvss_score=9.4,
+                affected_hosts=["auth-server-01"],
+                description="Authentication bypass in Keycloak SAML — ACTIVELY EXPLOITED",
+                patch_available=True,
+                exploit_in_wild=True,
+            ),
+            Vulnerability(
+                cve_id="CVE-2024-4003",
+                severity=SeverityLevel.HIGH,
+                cvss_score=7.8,
+                affected_hosts=["web-frontend-01", "web-frontend-02"],
+                description="Server-side request forgery in Nginx reverse proxy",
+                patch_available=True,
+                exploit_in_wild=False,
+            ),
+        ]
+        
+        return nodes, dependencies, vulnerabilities
+    
+    def _generate_zero_day_scenario(
+        self,
+    ) -> tuple[list[ServerNode], list[Dependency], list[Vulnerability]]:
+        """
+        Generate a zero-day cascade scenario: dynamic CVE injection mid-episode.
+        
+        Key Features:
+        - 10 nodes with moderate dependency graph
+        - 2 initial vulnerabilities (manageable)
+        - At turn 5: A new CRITICAL zero-day CVE is injected
+        - At turn 15: Another HIGH severity CVE appears on newly patched nodes
+        - Agent must dynamically adapt strategy when new threats appear
+        
+        This tests the agent's ability to:
+        1. Plan ahead while remaining adaptable
+        2. Reprioritize when new critical threats emerge
+        3. Handle strategy disruption gracefully
+        4. Manage increasingly complex state
+        """
+        nodes = [
+            # Tier 1 - Core infrastructure
+            ServerNode(
+                hostname="db-primary-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.CRITICAL,
+                state=NodeState.ONLINE,
+                services=["postgresql", "pgbouncer"],
+            ),
+            ServerNode(
+                hostname="auth-server-01",
+                os="RHEL 8.9",
+                tier=CriticalityTier.CRITICAL,
+                state=NodeState.ONLINE,
+                services=["keycloak", "java"],
+            ),
+            # Tier 2 - Application layer
+            ServerNode(
+                hostname="app-server-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["python3", "django", "celery"],
+            ),
+            ServerNode(
+                hostname="app-server-02",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["python3", "django", "celery"],
+            ),
+            ServerNode(
+                hostname="api-gateway-01",
+                os="RHEL 8.9",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["kong", "nginx"],
+            ),
+            # Tier 2 - Web layer
+            ServerNode(
+                hostname="web-frontend-01",
+                os="RHEL 8.9",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["nginx", "react"],
+            ),
+            ServerNode(
+                hostname="web-frontend-02",
+                os="RHEL 8.9",
+                tier=CriticalityTier.IMPORTANT,
+                state=NodeState.ONLINE,
+                services=["nginx", "react"],
+            ),
+            # Tier 3 - Infrastructure
+            ServerNode(
+                hostname="cache-redis-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.STANDARD,
+                state=NodeState.ONLINE,
+                services=["redis-cluster"],
+            ),
+            ServerNode(
+                hostname="mq-rabbitmq-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.STANDARD,
+                state=NodeState.ONLINE,
+                services=["rabbitmq", "erlang"],
+            ),
+            ServerNode(
+                hostname="monitoring-01",
+                os="Ubuntu 22.04 LTS",
+                tier=CriticalityTier.STANDARD,
+                state=NodeState.ONLINE,
+                services=["prometheus", "grafana", "alertmanager"],
+            ),
+        ]
+        
+        dependencies = [
+            # Web -> API Gateway -> App -> DB/Auth
+            Dependency(node="web-frontend-01", depends_on="api-gateway-01", dependency_type="hard",
+                       description="Frontend routes through API gateway"),
+            Dependency(node="web-frontend-02", depends_on="api-gateway-01", dependency_type="hard",
+                       description="Frontend routes through API gateway"),
+            Dependency(node="api-gateway-01", depends_on="app-server-01", dependency_type="hard",
+                       description="Gateway proxies to app server"),
+            Dependency(node="api-gateway-01", depends_on="app-server-02", dependency_type="soft",
+                       description="Gateway can degrade with single app server"),
+            Dependency(node="app-server-01", depends_on="db-primary-01", dependency_type="hard",
+                       description="App requires database"),
+            Dependency(node="app-server-02", depends_on="db-primary-01", dependency_type="hard",
+                       description="App requires database"),
+            Dependency(node="app-server-01", depends_on="auth-server-01", dependency_type="hard",
+                       description="App requires authentication service"),
+            Dependency(node="app-server-02", depends_on="auth-server-01", dependency_type="hard",
+                       description="App requires authentication service"),
+            Dependency(node="app-server-01", depends_on="cache-redis-01", dependency_type="soft",
+                       description="App uses cache for performance"),
+        ]
+        
+        # Initial vulnerabilities (manageable — but more will come)
+        vulnerabilities = [
+            Vulnerability(
+                cve_id="CVE-2024-5001",
+                severity=SeverityLevel.HIGH,
+                cvss_score=8.1,
+                affected_hosts=["app-server-01", "app-server-02"],
+                description="Deserialization RCE in Django REST framework",
+                patch_available=True,
+                exploit_in_wild=False,
+            ),
+            Vulnerability(
+                cve_id="CVE-2024-5002",
+                severity=SeverityLevel.MEDIUM,
+                cvss_score=5.5,
+                affected_hosts=["cache-redis-01"],
+                description="Information disclosure in Redis MONITOR command",
+                patch_available=True,
+                exploit_in_wild=False,
+            ),
+        ]
+        
+        return nodes, dependencies, vulnerabilities
+    
     # =========================================================================
     # STEP - Main State Machine
     # =========================================================================
@@ -652,9 +977,11 @@ class PatchCascadeEnv:
             self._messages.append(f"Invalid action: {error_msg}")
             self._state.action_history.append(action)
             self._state.turn_number += 1
+            self._invalid_action_count += 1
             
             # Still need to run time progression for pending patches
             self._process_time_progression()
+            self._process_dynamic_events()
             self._process_dependency_cascade()
             
             # Calculate reward (penalty for invalid action)
@@ -690,11 +1017,17 @@ class PatchCascadeEnv:
         self._process_time_progression()
         
         # ---------------------------------------------------------------------
+        # PHASE 3.5: Dynamic Events (Zero-Day injection, exploit spreading)
+        # ---------------------------------------------------------------------
+        self._process_dynamic_events()
+        
+        # ---------------------------------------------------------------------
         # PHASE 4: Dependency Cascade
         # ---------------------------------------------------------------------
         cascade_count = self._process_dependency_cascade()
         if cascade_count > 0:
-            self._messages.append(f"CASCADE FAILURE: {cascade_count} node(s) crashed due to dependency failures!")
+            self._cascade_failure_count += cascade_count
+            self._messages.append(f"⚠️ CASCADE FAILURE: {cascade_count} node(s) crashed due to dependency failures!")
         
         # ---------------------------------------------------------------------
         # PHASE 5: Health Calculation & Reward
@@ -725,6 +1058,9 @@ class PatchCascadeEnv:
         
         info["valid"] = True
         info["cascade_failures"] = cascade_count
+        info["total_cascade_failures"] = self._cascade_failure_count
+        info["invalid_actions"] = self._invalid_action_count
+        info["initial_vulnerability_count"] = self._initial_vuln_count
         info["patches_completed"] = len([m for m in self._messages if "Patch completed" in m])
         
         return StepResult(
@@ -809,10 +1145,156 @@ class PatchCascadeEnv:
                 if vuln.cve_id == cve_id and hostname in vuln.affected_hosts:
                     vuln.affected_hosts.remove(hostname)
         
-        # Remove fully resolved vulnerabilities
+        # Remove fully resolved vulnerabilities (keep reference for grading)
         self._state.vulnerabilities = [
             v for v in self._state.vulnerabilities if len(v.affected_hosts) > 0
         ]
+    
+    def _process_dynamic_events(self) -> None:
+        """
+        Process dynamic events: exploit spreading and zero-day CVE injection.
+        
+        This system makes the environment dynamic and tests adaptive planning:
+        
+        1. Exploit Spreading (incident_response & hard tasks):
+           If a vulnerability with exploit_in_wild=True remains unpatched on
+           an ONLINE node for EXPLOIT_SPREAD_THRESHOLD turns, it spreads to
+           a randomly selected connected node (via dependency graph).
+        
+        2. Zero-Day Injection (zero_day task):
+           At predefined turns (5 and 15), new CVEs are injected into the
+           environment, forcing the agent to adapt its strategy mid-episode.
+        """
+        assert self._state is not None
+        
+        # --- Exploit Spreading ---
+        if self._task_level in ("incident_response", "hard", "zero_day"):
+            self._process_exploit_spreading()
+        
+        # --- Zero-Day CVE Injection ---
+        if self._task_level == "zero_day":
+            self._process_zero_day_injection()
+    
+    def _process_exploit_spreading(self) -> None:
+        """
+        Spread actively exploited vulnerabilities to connected nodes.
+        
+        Mechanic: If an exploit_in_wild CVE remains on an ONLINE node for
+        EXPLOIT_SPREAD_THRESHOLD consecutive turns, it spreads to one
+        connected node (selected via dependency graph). This creates urgency
+        and rewards proactive patching.
+        """
+        assert self._state is not None
+        
+        online_hosts = {n.hostname for n in self._state.nodes if n.state == NodeState.ONLINE}
+        
+        for vuln in self._state.vulnerabilities:
+            if not vuln.exploit_in_wild:
+                continue
+            
+            # Check if any affected host is still online (vulnerability active)
+            active_online = [h for h in vuln.affected_hosts if h in online_hosts]
+            
+            if active_online:
+                # Increment tracker
+                tracker_key = vuln.cve_id
+                self._exploit_turn_tracker[tracker_key] = (
+                    self._exploit_turn_tracker.get(tracker_key, 0) + 1
+                )
+                
+                # Check if threshold reached
+                if self._exploit_turn_tracker[tracker_key] >= EXPLOIT_SPREAD_THRESHOLD:
+                    # Find a connected node to spread to
+                    spread_target = self._find_spread_target(vuln, online_hosts)
+                    if spread_target and spread_target not in vuln.affected_hosts:
+                        vuln.affected_hosts.append(spread_target)
+                        self._exploit_turn_tracker[tracker_key] = 0  # Reset timer
+                        self._messages.append(
+                            f"🔴 EXPLOIT SPREAD: {vuln.cve_id} has spread to {spread_target}! "
+                            f"Patch immediately to contain the threat."
+                        )
+            else:
+                # Reset tracker if no online hosts affected
+                self._exploit_turn_tracker.pop(vuln.cve_id, None)
+    
+    def _find_spread_target(
+        self, vuln: Vulnerability, online_hosts: set[str]
+    ) -> str | None:
+        """
+        Find a connected node for exploit to spread to.
+        
+        Looks at dependency graph edges from affected hosts
+        to find a connected, online, unaffected node.
+        """
+        assert self._state is not None
+        
+        candidates: set[str] = set()
+        affected = set(vuln.affected_hosts)
+        
+        for dep in self._state.dependencies:
+            # Spread along dependency edges (both directions)
+            if dep.node in affected and dep.depends_on in online_hosts:
+                candidates.add(dep.depends_on)
+            if dep.depends_on in affected and dep.node in online_hosts:
+                candidates.add(dep.node)
+        
+        # Remove already-affected hosts
+        candidates -= affected
+        
+        if candidates:
+            return self._rng.choice(list(candidates))
+        return None
+    
+    def _process_zero_day_injection(self) -> None:
+        """
+        Inject zero-day CVEs at predefined turns.
+        
+        Turn 5: CRITICAL zero-day on auth infrastructure (exploit_in_wild=True)
+        Turn 15: HIGH severity CVE on web layer
+        
+        These events force the agent to dynamically reprioritize,
+        testing adaptive planning and strategy revision capabilities.
+        """
+        assert self._state is not None
+        turn = self._state.turn_number
+        
+        if turn == 5 and "zero_day_turn_5" not in self._dynamic_events_fired:
+            self._dynamic_events_fired.append("zero_day_turn_5")
+            
+            new_cve = Vulnerability(
+                cve_id="CVE-2024-5099",
+                severity=SeverityLevel.CRITICAL,
+                cvss_score=9.9,
+                affected_hosts=["auth-server-01", "db-primary-01"],
+                description="ZERO-DAY: Critical authentication bypass — actively exploited in the wild",
+                patch_available=True,
+                exploit_in_wild=True,
+            )
+            self._state.vulnerabilities.append(new_cve)
+            self._messages.append(
+                "🚨 ZERO-DAY ALERT: CVE-2024-5099 (CVSS 9.9) discovered! "
+                "Critical authentication bypass affecting auth-server-01 and db-primary-01. "
+                "ACTIVELY EXPLOITED — immediate patching required!"
+            )
+        
+        if turn == 15 and "zero_day_turn_15" not in self._dynamic_events_fired:
+            self._dynamic_events_fired.append("zero_day_turn_15")
+            
+            new_cve = Vulnerability(
+                cve_id="CVE-2024-5100",
+                severity=SeverityLevel.HIGH,
+                cvss_score=8.4,
+                affected_hosts=["web-frontend-01", "web-frontend-02", "api-gateway-01"],
+                description="ZERO-DAY: HTTP request smuggling in reverse proxy configuration",
+                patch_available=True,
+                exploit_in_wild=False,
+            )
+            self._state.vulnerabilities.append(new_cve)
+            self._messages.append(
+                "⚠️ NEW THREAT: CVE-2024-5100 (CVSS 8.4) discovered! "
+                "HTTP request smuggling affecting web-frontend-01, web-frontend-02, api-gateway-01. "
+                "Patch available — prioritize based on current strategy."
+            )
     
     def _process_dependency_cascade(self) -> int:
         """
