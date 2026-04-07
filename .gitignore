@@ -1,0 +1,31 @@
+# =============================================================================
+# PatchCascade SOC - Git Ignore
+# =============================================================================
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environment variables (keep secrets out of repo)
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
