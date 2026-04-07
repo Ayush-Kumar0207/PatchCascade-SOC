@@ -1,12 +1,17 @@
 # =============================================================================
-# PatchCascade SOC - OpenEnv Metadata
+# PatchCascade SOC - OpenEnv Configuration
 # =============================================================================
-# Configuration file for the Meta PyTorch OpenEnv Hackathon.
-# Defines environment metadata, capabilities, and evaluation parameters.
+# OpenEnv spec_version 1 compliant configuration for the Meta PyTorch Hackathon.
 # =============================================================================
 
-# Environment identification
+spec_version: 1
 name: patchcascade
+type: space
+runtime: fastapi
+app: server:app
+port: 8000
+
+# Environment metadata
 display_name: "PatchCascade SOC"
 version: "1.0.0"
 description: |
@@ -19,37 +24,83 @@ description: |
 # Author information
 author: "Ayush Kumar & Ravi Prashant (PatchCascade SOC Team)"
 license: "Apache-2.0"
-repository: "https://github.com/patchcascade/soc-env"
+repository: "https://github.com/Ayush-Kumar0207/PatchCascade-SOC"
 
-# Environment type and capabilities
-type: "turn-based"
-observation_type: "json"
-action_type: "json"
-
-# Task levels available
+# =============================================================================
+# Tasks with Graders (Required for hackathon: at least 3 tasks with graders)
+# =============================================================================
+# Each task defines a difficulty level with an associated grader that computes
+# a normalized score (0.0-1.0) based on agent performance.
 tasks:
-  - name: "easy"
-    description: "3-5 nodes, no dependencies, 1 vulnerability"
+  - id: easy
+    name: "Easy Mode"
+    description: "3-5 nodes, no dependencies, 1 vulnerability. Beginner-friendly scenario."
     max_turns: 30
     difficulty: 1
-  - name: "medium"
-    description: "5-8 nodes, linear dependency chain, 2 vulnerabilities"
+    grader:
+      type: reward_based
+      description: "Grades based on normalized cumulative reward"
+      success_threshold: 0.5
+      scoring:
+        method: normalized_reward
+        min_reward: -300.0
+        max_reward: 50.0
+        formula: "(total_reward - min_reward) / (max_reward - min_reward)"
+      success_criteria:
+        all_vulnerabilities_patched: true
+        no_catastrophic_failures: true
+
+  - id: medium
+    name: "Medium Mode"
+    description: "5-8 nodes, linear dependency chain, 2 vulnerabilities. Requires dependency awareness."
     max_turns: 50
     difficulty: 2
-  - name: "hard"
-    description: "10-15 nodes, complex dependency graph, multiple critical vulns"
+    grader:
+      type: reward_based
+      description: "Grades based on normalized cumulative reward"
+      success_threshold: 0.6
+      scoring:
+        method: normalized_reward
+        min_reward: -300.0
+        max_reward: 50.0
+        formula: "(total_reward - min_reward) / (max_reward - min_reward)"
+      success_criteria:
+        all_vulnerabilities_patched: true
+        no_catastrophic_failures: true
+        respect_dependencies: true
+
+  - id: hard
+    name: "Hard Mode"
+    description: "10-15 nodes, complex dependency graph, multiple critical vulnerabilities. Expert level."
     max_turns: 100
     difficulty: 3
+    grader:
+      type: reward_based
+      description: "Grades based on normalized cumulative reward"
+      success_threshold: 0.7
+      scoring:
+        method: normalized_reward
+        min_reward: -300.0
+        max_reward: 50.0
+        formula: "(total_reward - min_reward) / (max_reward - min_reward)"
+      success_criteria:
+        all_vulnerabilities_patched: true
+        no_catastrophic_failures: true
+        respect_dependencies: true
+        minimize_downtime: true
 
-# Default evaluation settings
+# =============================================================================
+# Evaluation Configuration
+# =============================================================================
 evaluation:
   default_task: "medium"
   metrics:
+    - name: "normalized_score"
+      description: "Normalized reward score (0.0-1.0)"
+      higher_is_better: true
+      primary: true
     - name: "success_rate"
       description: "Percentage of episodes where all vulnerabilities are patched"
-      higher_is_better: true
-    - name: "total_reward"
-      description: "Sum of all step rewards"
       higher_is_better: true
     - name: "steps_to_completion"
       description: "Number of steps taken to complete (lower is better)"
@@ -58,17 +109,33 @@ evaluation:
       description: "Total nodes crashed due to dependency violations"
       higher_is_better: false
 
-# Server configuration
-server:
-  port: 8000
-  endpoints:
-    reset: "/reset"
-    step: "/step"
-    observation: "/observation"
-    state: "/state"
-    health: "/health"
+# =============================================================================
+# Reward Structure
+# =============================================================================
+rewards:
+  type: dense
+  description: |
+    Dense reward shaping based on penalty reduction.
+    Reward = (Previous Turn's Total Penalty) - (Current Turn's Total Penalty)
+    
+    Penalty Components:
+    - Risk Penalty: Sum of CVSS scores for vulns on ONLINE nodes (doubled if exploit_in_wild)
+    - Downtime Penalty: Per non-ONLINE node, weighted by tier (Tier1=3x, Tier2=2x, Tier3=1x)
+    - Crashed nodes have doubled downtime penalty
+    
+    Terminal Bonuses:
+    - Victory (all patched): +50.0
+    - Catastrophic failure (all crashed): -100.0
+    - Invalid action: -0.5
+    
+    Normalization:
+    - MIN_REWARD: -300.0 (catastrophic failure ceiling)
+    - MAX_REWARD: 50.0 (perfect victory)
+    - Normalized Score = (total_reward - MIN) / (MAX - MIN), clamped to [0, 1]
 
-# Action space schema reference
+# =============================================================================
+# Action/Observation Schemas
+# =============================================================================
 action_schema:
   type: "object"
   properties:
@@ -87,7 +154,6 @@ action_schema:
       description: "Optional reasoning for the action"
   required: ["action_type"]
 
-# Observation space schema reference
 observation_schema:
   type: "object"
   properties:
@@ -110,28 +176,16 @@ observation_schema:
       type: "array"
       description: "System messages for the current turn"
 
-# Reward structure documentation
-rewards:
-  description: |
-    Dense reward shaping based on penalty reduction.
-    Reward = (Previous Turn's Total Penalty) - (Current Turn's Total Penalty)
-    
-    Penalty Components:
-    - Risk Penalty: Sum of CVSS scores for vulns on ONLINE nodes (doubled if exploit_in_wild)
-    - Downtime Penalty: Per non-ONLINE node, weighted by tier (Tier1=3x, Tier2=2x, Tier3=1x)
-    - Crashed nodes have doubled downtime penalty
-    
-    Terminal Bonuses:
-    - Victory (all patched): +50.0
-    - Catastrophic failure (all crashed): -100.0
-    - Invalid action: -0.5
-
-# Tags for discoverability
+# =============================================================================
+# Tags for Discoverability
+# =============================================================================
 tags:
-  - "security"
-  - "network-management"
-  - "dependency-graph"
-  - "turn-based"
-  - "json-observation"
-  - "json-action"
-  - "llm-agent"
+  - openenv
+  - security
+  - network-management
+  - dependency-graph
+  - turn-based
+  - json-observation
+  - json-action
+  - llm-agent
+  - hackathon

@@ -366,6 +366,231 @@ async def get_observation_schema() -> dict:
     return PatchCascadeObservation.model_json_schema()
 
 
+@app.get("/schema")
+async def get_schemas() -> dict:
+    """
+    Get combined schema for action, observation, and state.
+    
+    Required by OpenEnv validator for schema_endpoint check.
+    """
+    return {
+        "action": PatchCascadeAction.model_json_schema(),
+        "observation": PatchCascadeObservation.model_json_schema(),
+        "state": PatchCascadeState.model_json_schema(),
+    }
+
+
+# =============================================================================
+# METADATA AND TASKS ENDPOINTS (Required for hackathon grader validation)
+# =============================================================================
+
+# Task definitions with graders for hackathon compliance
+TASKS_WITH_GRADERS = [
+    {
+        "id": "easy",
+        "name": "Easy Mode",
+        "description": "3-5 nodes, no dependencies, 1 vulnerability. Beginner-friendly scenario.",
+        "max_turns": 30,
+        "difficulty": 1,
+        "grader": {
+            "type": "reward_based",
+            "description": "Grades based on normalized cumulative reward (0.0-1.0)",
+            "success_threshold": 0.5,
+            "scoring": {
+                "method": "normalized_reward",
+                "min_reward": -300.0,
+                "max_reward": 50.0,
+            },
+            "success_criteria": {
+                "all_vulnerabilities_patched": True,
+                "no_catastrophic_failures": True,
+            },
+        },
+    },
+    {
+        "id": "medium",
+        "name": "Medium Mode",
+        "description": "5-8 nodes, linear dependency chain, 2 vulnerabilities. Requires dependency awareness.",
+        "max_turns": 50,
+        "difficulty": 2,
+        "grader": {
+            "type": "reward_based",
+            "description": "Grades based on normalized cumulative reward (0.0-1.0)",
+            "success_threshold": 0.6,
+            "scoring": {
+                "method": "normalized_reward",
+                "min_reward": -300.0,
+                "max_reward": 50.0,
+            },
+            "success_criteria": {
+                "all_vulnerabilities_patched": True,
+                "no_catastrophic_failures": True,
+                "respect_dependencies": True,
+            },
+        },
+    },
+    {
+        "id": "hard",
+        "name": "Hard Mode",
+        "description": "10-15 nodes, complex dependency graph, multiple critical vulnerabilities. Expert level.",
+        "max_turns": 100,
+        "difficulty": 3,
+        "grader": {
+            "type": "reward_based",
+            "description": "Grades based on normalized cumulative reward (0.0-1.0)",
+            "success_threshold": 0.7,
+            "scoring": {
+                "method": "normalized_reward",
+                "min_reward": -300.0,
+                "max_reward": 50.0,
+            },
+            "success_criteria": {
+                "all_vulnerabilities_patched": True,
+                "no_catastrophic_failures": True,
+                "respect_dependencies": True,
+                "minimize_downtime": True,
+            },
+        },
+    },
+]
+
+
+@app.get("/metadata")
+async def get_metadata() -> dict:
+    """
+    Get environment metadata including tasks with graders.
+    
+    Required by OpenEnv validator for metadata_endpoint check.
+    Returns name, description, and task/grader information.
+    """
+    return {
+        "name": "patchcascade",
+        "display_name": "PatchCascade SOC",
+        "description": (
+            "A Security Operations Center (SOC) simulation environment where an agent "
+            "manages vulnerability patches across a network of interdependent servers. "
+            "The agent must balance patching critical vulnerabilities (reducing risk) "
+            "with keeping services online (reducing downtime), while avoiding cascade "
+            "failures caused by dependency violations."
+        ),
+        "version": "1.0.0",
+        "author": "Ayush Kumar & Ravi Prashant (PatchCascade SOC Team)",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/Ayush-Kumar0207/PatchCascade-SOC",
+        "tasks": TASKS_WITH_GRADERS,
+        "tasks_count": len(TASKS_WITH_GRADERS),
+        "graders_count": len([t for t in TASKS_WITH_GRADERS if "grader" in t]),
+        "evaluation": {
+            "default_task": "medium",
+            "scoring_range": [0.0, 1.0],
+            "primary_metric": "normalized_score",
+        },
+        "tags": [
+            "openenv",
+            "security",
+            "network-management",
+            "dependency-graph",
+            "turn-based",
+            "llm-agent",
+        ],
+    }
+
+
+@app.get("/tasks")
+async def get_tasks() -> dict:
+    """
+    Get list of available tasks with their graders.
+    
+    This endpoint explicitly lists all tasks and their associated graders
+    for hackathon validation compliance.
+    """
+    return {
+        "tasks": TASKS_WITH_GRADERS,
+        "count": len(TASKS_WITH_GRADERS),
+        "graders_available": len([t for t in TASKS_WITH_GRADERS if "grader" in t]),
+    }
+
+
+@app.get("/tasks/{task_id}")
+async def get_task(task_id: str) -> dict:
+    """
+    Get details for a specific task including its grader.
+    
+    Args:
+        task_id: The task identifier (easy, medium, hard)
+    
+    Returns:
+        Task details with grader configuration.
+    """
+    for task in TASKS_WITH_GRADERS:
+        if task["id"] == task_id:
+            return task
+    raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+
+
+@app.post("/grade/{task_id}")
+async def grade_episode(task_id: str, episode_data: dict) -> dict:
+    """
+    Grade an episode for a specific task.
+    
+    This endpoint computes the normalized score for an episode based on
+    the task's grader configuration.
+    
+    Args:
+        task_id: The task identifier (easy, medium, hard)
+        episode_data: Episode results including rewards, success status, etc.
+    
+    Returns:
+        Grading results with normalized score (0.0-1.0).
+    """
+    # Find the task
+    task = None
+    for t in TASKS_WITH_GRADERS:
+        if t["id"] == task_id:
+            task = t
+            break
+    
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+    
+    grader = task.get("grader", {})
+    min_reward = grader.get("scoring", {}).get("min_reward", -300.0)
+    max_reward = grader.get("scoring", {}).get("max_reward", 50.0)
+    success_threshold = grader.get("success_threshold", 0.5)
+    
+    # Extract episode data
+    total_reward = episode_data.get("total_reward", 0.0)
+    rewards = episode_data.get("rewards", [])
+    success = episode_data.get("success", False)
+    steps = episode_data.get("steps", 0)
+    
+    # Compute normalized score (0.0-1.0)
+    if max_reward == min_reward:
+        normalized_score = 0.5
+    else:
+        normalized_score = (total_reward - min_reward) / (max_reward - min_reward)
+        normalized_score = max(0.0, min(1.0, normalized_score))
+    
+    # Determine if threshold is met
+    passed = normalized_score >= success_threshold and success
+    
+    return {
+        "task_id": task_id,
+        "grader_type": grader.get("type", "reward_based"),
+        "normalized_score": round(normalized_score, 4),
+        "success_threshold": success_threshold,
+        "passed": passed,
+        "raw_total_reward": total_reward,
+        "steps_taken": steps,
+        "episode_success": success,
+        "grading_details": {
+            "min_reward": min_reward,
+            "max_reward": max_reward,
+            "formula": "(total_reward - min_reward) / (max_reward - min_reward)",
+        },
+    }
+
+
 # =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
