@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY models.py .
 COPY environment.py .
-COPY server.py .
+COPY _server.py .
 COPY client.py .
 COPY inference.py .
 COPY grader.py .
@@ -35,8 +35,8 @@ COPY grader.py .
 # Copy tasks package
 COPY tasks/ ./tasks/
 
-# Copy server CLI package (OpenEnv entry point)
-COPY server_cli/ ./server_cli/
+# Copy server package (OpenEnv entry point)
+COPY server/ ./server/
 
 # Copy project config
 COPY pyproject.toml .
