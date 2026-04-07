@@ -233,18 +233,21 @@ async def health_check() -> HealthResponse:
 
 
 @app.post("/reset", response_model=ObservationResponse)
-async def reset_environment(request: ResetRequest) -> ObservationResponse:
+async def reset_environment(request: ResetRequest | None = None) -> ObservationResponse:
     """
     Reset the environment to a new episode.
     
     Args:
-        request: Contains task_level and optional seed.
+        request: Contains task_level and optional seed. If not provided, defaults to easy.
     
     Returns:
         Initial observation for the agent.
     """
     try:
         env = get_env()
+        # Handle missing body - use defaults
+        if request is None:
+            request = ResetRequest()
         obs = env.reset(task_level=request.task_level, seed=request.seed)
         return ObservationResponse(observation=obs.model_dump())
     except ValueError as e:
