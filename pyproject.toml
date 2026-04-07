@@ -28,13 +28,13 @@ dependencies = [
     "pydantic>=2.5.0",
     "httpx>=0.26.0",
     "openai>=1.10.0",
-    "openenv-core>=0.2.0",
 ]
 
+[project.entry-points."openenv.server"]
+patchcascade = "server:app"
+
 [project.scripts]
-serve = "server:main"
-server = "server:main"
-patchcascade-server = "server:main"
+patchcascade-serve = "server:main"
 
 [project.optional-dependencies]
 dev = [
