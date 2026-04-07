@@ -78,6 +78,10 @@ VICTORY_BONUS: float = 50.0
 # Penalty for catastrophic failure (all nodes crashed)
 CATASTROPHIC_FAILURE_PENALTY: float = -100.0
 
+# Small per-turn time pressure — ensures dense (non-zero) reward every step,
+# even when state doesn't change (e.g. noop). Incentivizes efficient patching.
+TIME_PRESSURE_PENALTY: float = -0.1
+
 # Default max turns by difficulty
 MAX_TURNS_BY_DIFFICULTY: dict[str, int] = {
     "easy": 30,
@@ -986,7 +990,7 @@ class PatchCascadeEnv:
             
             # Calculate reward (penalty for invalid action)
             current_penalty = self._calculate_total_penalty(self._state.nodes, self._state.vulnerabilities)
-            reward = (self._last_total_penalty - current_penalty) + INVALID_ACTION_PENALTY
+            reward = (self._last_total_penalty - current_penalty) + INVALID_ACTION_PENALTY + TIME_PRESSURE_PENALTY
             self._last_total_penalty = current_penalty
             self._state.reward_history.append(reward)
             
@@ -1035,7 +1039,8 @@ class PatchCascadeEnv:
         current_penalty = self._calculate_total_penalty(self._state.nodes, self._state.vulnerabilities)
         
         # Reward = improvement in penalty (lower is better, so we want positive reward for decrease)
-        reward = self._last_total_penalty - current_penalty
+        # Time pressure ensures non-zero reward every step (dense signal)
+        reward = (self._last_total_penalty - current_penalty) + TIME_PRESSURE_PENALTY
         self._last_total_penalty = current_penalty
         self._state.reward_history.append(reward)
         

@@ -151,9 +151,10 @@ The agent must dynamically adapt its strategy when new threats emerge.
 Unlike sparse-reward environments, PatchCascade provides continuous feedback:
 
 ```
-Reward = (Previous Penalty) - (Current Penalty)
+Reward = (Previous Penalty) - (Current Penalty) - 0.1
 
 Where Penalty = Risk_Penalty + Downtime_Penalty
+The -0.1 time pressure ensures every step has non-zero reward.
 ```
 
 | Event | Reward Impact |
@@ -186,7 +187,7 @@ H_t — Aggregate health metrics at turn t
 The reward at each step uses **potential-based reward shaping**:
 
 ```
-R_t = Φ(S_{t-1}) - Φ(S_t) + R_terminal
+R_t = Φ(S_{t-1}) - Φ(S_t) - 0.1 + R_terminal
 
 Where:
   Φ(S) = Risk_Penalty(S) + Downtime_Penalty(S)
@@ -195,10 +196,12 @@ Where:
   
   Downtime_Penalty = Σ_i [ tier_mult(n_i) × (2 if crashed(n_i) else 1) ]   ∀ n_i ∉ ONLINE
   
+  -0.1 = time pressure penalty (ensures dense non-zero reward every step)
+  
   R_terminal = { +50 if all vulns patched,  -100 if all nodes crashed,  0 otherwise }
 ```
 
-This formulation guarantees that **any action reducing total penalty yields positive reward**, providing dense learning signal throughout the episode.
+This formulation guarantees that **every step produces non-zero reward**, providing truly dense learning signal throughout the episode.
 
 ### Normalization
 
@@ -403,7 +406,7 @@ python inference.py
 ### Validate Your Submission
 
 ```bash
-bash validate.sh https://your-space.hf.space
+bash validate-submission.sh https://your-space.hf.space
 ```
 
 ### 🎬 Sample Interaction

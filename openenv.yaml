@@ -196,8 +196,11 @@ evaluation:
 rewards:
   type: dense
   description: |
-    Dense reward shaping based on penalty reduction.
-    Reward = (Previous Turn's Total Penalty) - (Current Turn's Total Penalty)
+    Dense reward shaping based on penalty reduction with time pressure.
+    Reward = (Previous Turn's Total Penalty) - (Current Turn's Total Penalty) - 0.1
+    
+    The -0.1 per-turn time pressure ensures every step produces non-zero
+    reward, incentivizing efficient action sequences.
     
     Penalty Components:
     - Risk Penalty: Sum of CVSS scores for vulns on ONLINE nodes (doubled if exploit_in_wild)
@@ -208,6 +211,7 @@ rewards:
     - Victory (all patched): +50.0
     - Catastrophic failure (all crashed): -100.0
     - Invalid action: -0.5
+    - Time pressure: -0.1 per turn (ensures dense signal)
     
     Normalization:
     - MIN_REWARD: -300.0 (catastrophic failure ceiling)

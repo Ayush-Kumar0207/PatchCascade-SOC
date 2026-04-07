@@ -43,7 +43,7 @@ from models import ActionType, PatchCascadeAction, PatchCascadeObservation
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.environ.get("HF_TOKEN")
+HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("OPENAI_API_KEY")
 TASK_LEVEL = os.environ.get("TASK_LEVEL", "all")
 ENV_SEED = os.environ.get("ENV_SEED")
 
