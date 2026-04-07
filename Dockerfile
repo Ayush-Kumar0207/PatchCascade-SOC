@@ -30,6 +30,10 @@ COPY environment.py .
 COPY server.py .
 COPY client.py .
 COPY inference.py .
+COPY grader.py .
+
+# Copy tasks package
+COPY tasks/ ./tasks/
 
 # Copy metadata
 COPY openenv.yaml .

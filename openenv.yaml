@@ -27,19 +27,29 @@ license: "Apache-2.0"
 repository: "https://github.com/Ayush-Kumar0207/PatchCascade-SOC"
 
 # =============================================================================
+# Grader Module (Required for hackathon: programmatic graders)
+# =============================================================================
+grader_module: grader
+grader_class: TaskGrader
+
+# =============================================================================
 # Tasks with Graders (Required for hackathon: at least 3 tasks with graders)
 # =============================================================================
-# Each task defines a difficulty level with an associated grader that computes
-# a normalized score (0.0-1.0) based on agent performance.
+# Each task defines a difficulty level with an associated programmatic grader
+# that computes a normalized score (0.0-1.0) based on agent performance.
 tasks:
   - id: easy
     name: "Easy Mode"
     description: "3-5 nodes, no dependencies, 1 vulnerability. Beginner-friendly scenario."
     max_turns: 30
     difficulty: 1
+    has_grader: true
     grader:
-      type: reward_based
-      description: "Grades based on normalized cumulative reward"
+      type: programmatic
+      module: grader
+      class: EasyGrader
+      function: grade
+      description: "Programmatic grader — normalized cumulative reward"
       success_threshold: 0.5
       scoring:
         method: normalized_reward
@@ -55,9 +65,13 @@ tasks:
     description: "5-8 nodes, linear dependency chain, 2 vulnerabilities. Requires dependency awareness."
     max_turns: 50
     difficulty: 2
+    has_grader: true
     grader:
-      type: reward_based
-      description: "Grades based on normalized cumulative reward"
+      type: programmatic
+      module: grader
+      class: MediumGrader
+      function: grade
+      description: "Programmatic grader — normalized cumulative reward"
       success_threshold: 0.6
       scoring:
         method: normalized_reward
@@ -74,9 +88,13 @@ tasks:
     description: "10-15 nodes, complex dependency graph, multiple critical vulnerabilities. Expert level."
     max_turns: 100
     difficulty: 3
+    has_grader: true
     grader:
-      type: reward_based
-      description: "Grades based on normalized cumulative reward"
+      type: programmatic
+      module: grader
+      class: HardGrader
+      function: grade
+      description: "Programmatic grader — normalized cumulative reward"
       success_threshold: 0.7
       scoring:
         method: normalized_reward

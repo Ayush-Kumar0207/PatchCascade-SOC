@@ -24,6 +24,18 @@ from models import (
     PatchCascadeState,
     ActionType,
 )
+from grader import (
+    GRADERS,
+    grade_episode as _grade_episode,
+    list_graders,
+    GraderResult,
+)
+from tasks import (
+    TASK_REGISTRY,
+    get_task,
+    list_tasks,
+    list_tasks_with_graders,
+)
 
 
 # =============================================================================
@@ -120,30 +132,13 @@ class PatchCascadeEnvironment(Environment):
         task_level: Literal["easy", "medium", "hard"] = "easy",
         seed: int | None = None,
     ) -> PatchCascadeObservation:
-        """
-        Reset the environment to a new episode.
-        
-        Args:
-            task_level: Difficulty level ("easy", "medium", "hard").
-            seed: Optional random seed for reproducibility.
-        
-        Returns:
-            Initial observation for the agent.
-        """
+        """Reset the environment to a new episode."""
         obs = self._env.reset(task_level=task_level, seed=seed)
         self._initialized = True
         return obs
     
     def step(self, action: PatchCascadeAction) -> StepResult:
-        """
-        Execute one step in the environment.
-        
-        Args:
-            action: The action to execute.
-        
-        Returns:
-            StepResult containing observation, reward, done, truncated, info.
-        """
+        """Execute one step in the environment."""
         if not self._initialized:
             raise RuntimeError("Environment not initialized. Call reset() first.")
         return self._env.step(action)
@@ -200,7 +195,7 @@ app.add_middleware(
 
 
 # =============================================================================
-# API ENDPOINTS
+# CORE API ENDPOINTS
 # =============================================================================
 
 
@@ -217,6 +212,9 @@ async def root() -> dict:
             "step": "POST /step",
             "observation": "GET /observation",
             "state": "GET /state",
+            "tasks": "GET /tasks",
+            "metadata": "GET /metadata",
+            "grade": "POST /grade/{task_id}",
         },
         "documentation": "/docs",
     }
@@ -234,18 +232,9 @@ async def health_check() -> HealthResponse:
 
 @app.post("/reset", response_model=ObservationResponse)
 async def reset_environment(request: ResetRequest | None = None) -> ObservationResponse:
-    """
-    Reset the environment to a new episode.
-    
-    Args:
-        request: Contains task_level and optional seed. If not provided, defaults to easy.
-    
-    Returns:
-        Initial observation for the agent.
-    """
+    """Reset the environment to a new episode."""
     try:
         env = get_env()
-        # Handle missing body - use defaults
         if request is None:
             request = ResetRequest()
         obs = env.reset(task_level=request.task_level, seed=request.seed)
@@ -258,19 +247,10 @@ async def reset_environment(request: ResetRequest | None = None) -> ObservationR
 
 @app.post("/step", response_model=StepResponse)
 async def step_environment(request: StepRequest) -> StepResponse:
-    """
-    Execute one step in the environment.
-    
-    Args:
-        request: Contains action_type, target, and optional cve_id/reason.
-    
-    Returns:
-        Step result with observation, reward, done, truncated, info.
-    """
+    """Execute one step in the environment."""
     try:
         env = get_env()
         
-        # Parse action type
         try:
             action_type = ActionType(request.action_type)
         except ValueError:
@@ -280,7 +260,6 @@ async def step_environment(request: StepRequest) -> StepResponse:
                        f"Valid types: {[a.value for a in ActionType]}"
             )
         
-        # Construct action
         action = PatchCascadeAction(
             action_type=action_type,
             target=request.target,
@@ -288,7 +267,6 @@ async def step_environment(request: StepRequest) -> StepResponse:
             reason=request.reason,
         )
         
-        # Execute step
         result = env.step(action)
         
         return StepResponse(
@@ -306,12 +284,7 @@ async def step_environment(request: StepRequest) -> StepResponse:
 
 @app.get("/observation", response_model=ObservationResponse)
 async def get_observation() -> ObservationResponse:
-    """
-    Get the current observation without advancing state.
-    
-    Returns:
-        Current observation.
-    """
+    """Get the current observation without advancing state."""
     try:
         env = get_env()
         obs = env.get_observation()
@@ -324,12 +297,7 @@ async def get_observation() -> ObservationResponse:
 
 @app.get("/state", response_model=StateResponse)
 async def get_state() -> StateResponse:
-    """
-    Get the internal state (for debugging/grading only).
-    
-    Returns:
-        Full internal state.
-    """
+    """Get the internal state (for debugging/grading only)."""
     try:
         env = get_env()
         return StateResponse(state=env.state.model_dump())
@@ -341,12 +309,7 @@ async def get_state() -> StateResponse:
 
 @app.get("/render")
 async def render_environment() -> dict[str, str]:
-    """
-    Render a human-readable summary of the current state.
-    
-    Returns:
-        Rendered state as text.
-    """
+    """Render a human-readable summary of the current state."""
     try:
         env = get_env()
         return {"render": env.render()}
@@ -368,11 +331,7 @@ async def get_observation_schema() -> dict:
 
 @app.get("/schema")
 async def get_schemas() -> dict:
-    """
-    Get combined schema for action, observation, and state.
-    
-    Required by OpenEnv validator for schema_endpoint check.
-    """
+    """Get combined schema for action, observation, and state."""
     return {
         "action": PatchCascadeAction.model_json_schema(),
         "observation": PatchCascadeObservation.model_json_schema(),
@@ -381,78 +340,87 @@ async def get_schemas() -> dict:
 
 
 # =============================================================================
-# METADATA AND TASKS ENDPOINTS (Required for hackathon grader validation)
+# TASKS & GRADERS ENDPOINTS (Required for hackathon Phase 2 validation)
 # =============================================================================
 
-# Task definitions with graders for hackathon compliance
-TASKS_WITH_GRADERS = [
-    {
-        "id": "easy",
-        "name": "Easy Mode",
-        "description": "3-5 nodes, no dependencies, 1 vulnerability. Beginner-friendly scenario.",
-        "max_turns": 30,
-        "difficulty": 1,
-        "grader": {
-            "type": "reward_based",
-            "description": "Grades based on normalized cumulative reward (0.0-1.0)",
-            "success_threshold": 0.5,
-            "scoring": {
-                "method": "normalized_reward",
-                "min_reward": -300.0,
-                "max_reward": 50.0,
-            },
-            "success_criteria": {
-                "all_vulnerabilities_patched": True,
-                "no_catastrophic_failures": True,
-            },
-        },
-    },
-    {
-        "id": "medium",
-        "name": "Medium Mode",
-        "description": "5-8 nodes, linear dependency chain, 2 vulnerabilities. Requires dependency awareness.",
-        "max_turns": 50,
-        "difficulty": 2,
-        "grader": {
-            "type": "reward_based",
-            "description": "Grades based on normalized cumulative reward (0.0-1.0)",
-            "success_threshold": 0.6,
-            "scoring": {
-                "method": "normalized_reward",
-                "min_reward": -300.0,
-                "max_reward": 50.0,
-            },
-            "success_criteria": {
-                "all_vulnerabilities_patched": True,
-                "no_catastrophic_failures": True,
-                "respect_dependencies": True,
-            },
-        },
-    },
-    {
-        "id": "hard",
-        "name": "Hard Mode",
-        "description": "10-15 nodes, complex dependency graph, multiple critical vulnerabilities. Expert level.",
-        "max_turns": 100,
-        "difficulty": 3,
-        "grader": {
-            "type": "reward_based",
-            "description": "Grades based on normalized cumulative reward (0.0-1.0)",
-            "success_threshold": 0.7,
-            "scoring": {
-                "method": "normalized_reward",
-                "min_reward": -300.0,
-                "max_reward": 50.0,
-            },
-            "success_criteria": {
-                "all_vulnerabilities_patched": True,
-                "no_catastrophic_failures": True,
-                "respect_dependencies": True,
-                "minimize_downtime": True,
-            },
-        },
-    },
-]
+
+def _serialize_task(task: dict) -> dict:
+    """Serialize a task for API responses, removing non-serializable fields."""
+    return {
+        "id": task["id"],
+        "name": task["name"],
+        "description": task["description"],
+        "max_turns": task["max_turns"],
+        "difficulty": task["difficulty"],
+        "has_grader": task.get("has_grader", False),
+        "grader": task.get("grader", {}),
+        "success_criteria": task.get("success_criteria", {}),
+    }
+
+
+@app.get("/tasks")
+async def get_tasks_endpoint() -> dict:
+    """
+    Get list of available tasks with their graders.
+
+    This endpoint explicitly lists all tasks and their associated graders
+    for hackathon validation compliance.
+    """
+    all_tasks = list_tasks()
+    serialized = [_serialize_task(t) for t in all_tasks]
+    tasks_with_graders = [t for t in serialized if t.get("has_grader", False)]
+    return {
+        "tasks": serialized,
+        "count": len(serialized),
+        "tasks_with_graders": len(tasks_with_graders),
+        "graders_available": len(tasks_with_graders),
+    }
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_endpoint(task_id: str) -> dict:
+    """Get details for a specific task including its grader."""
+    try:
+        task = get_task(task_id)
+        return _serialize_task(task)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+
+
+@app.get("/graders")
+async def get_graders_endpoint() -> dict:
+    """
+    List all available graders.
+    
+    Returns grader metadata for each task, confirming that programmatic
+    graders are registered and callable.
+    """
+    graders = list_graders()
+    return {
+        "graders": graders,
+        "count": len(graders),
+    }
+
+
+@app.post("/grade/{task_id}")
+async def grade_episode_endpoint(task_id: str, episode_data: dict) -> dict:
+    """
+    Grade an episode for a specific task using the programmatic grader.
+    
+    Args:
+        task_id: The task identifier (easy, medium, hard)
+        episode_data: Episode results including rewards, success status, etc.
+    
+    Returns:
+        Grading results with normalized score (0.0-1.0).
+    """
+    try:
+        result = _grade_episode(task_id, episode_data)
+        return result.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Grading error: {str(e)}")
 
 
 @app.get("/metadata")
@@ -463,6 +431,11 @@ async def get_metadata() -> dict:
     Required by OpenEnv validator for metadata_endpoint check.
     Returns name, description, and task/grader information.
     """
+    all_tasks = list_tasks()
+    serialized_tasks = [_serialize_task(t) for t in all_tasks]
+    tasks_with_graders = [t for t in serialized_tasks if t.get("has_grader", False)]
+    graders = list_graders()
+    
     return {
         "name": "patchcascade",
         "display_name": "PatchCascade SOC",
@@ -477,9 +450,11 @@ async def get_metadata() -> dict:
         "author": "Ayush Kumar & Ravi Prashant (PatchCascade SOC Team)",
         "license": "Apache-2.0",
         "repository": "https://github.com/Ayush-Kumar0207/PatchCascade-SOC",
-        "tasks": TASKS_WITH_GRADERS,
-        "tasks_count": len(TASKS_WITH_GRADERS),
-        "graders_count": len([t for t in TASKS_WITH_GRADERS if "grader" in t]),
+        "tasks": serialized_tasks,
+        "tasks_count": len(serialized_tasks),
+        "tasks_with_graders": len(tasks_with_graders),
+        "graders_count": len(graders),
+        "graders": graders,
         "evaluation": {
             "default_task": "medium",
             "scoring_range": [0.0, 1.0],
@@ -493,101 +468,6 @@ async def get_metadata() -> dict:
             "turn-based",
             "llm-agent",
         ],
-    }
-
-
-@app.get("/tasks")
-async def get_tasks() -> dict:
-    """
-    Get list of available tasks with their graders.
-    
-    This endpoint explicitly lists all tasks and their associated graders
-    for hackathon validation compliance.
-    """
-    return {
-        "tasks": TASKS_WITH_GRADERS,
-        "count": len(TASKS_WITH_GRADERS),
-        "graders_available": len([t for t in TASKS_WITH_GRADERS if "grader" in t]),
-    }
-
-
-@app.get("/tasks/{task_id}")
-async def get_task(task_id: str) -> dict:
-    """
-    Get details for a specific task including its grader.
-    
-    Args:
-        task_id: The task identifier (easy, medium, hard)
-    
-    Returns:
-        Task details with grader configuration.
-    """
-    for task in TASKS_WITH_GRADERS:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
-
-
-@app.post("/grade/{task_id}")
-async def grade_episode(task_id: str, episode_data: dict) -> dict:
-    """
-    Grade an episode for a specific task.
-    
-    This endpoint computes the normalized score for an episode based on
-    the task's grader configuration.
-    
-    Args:
-        task_id: The task identifier (easy, medium, hard)
-        episode_data: Episode results including rewards, success status, etc.
-    
-    Returns:
-        Grading results with normalized score (0.0-1.0).
-    """
-    # Find the task
-    task = None
-    for t in TASKS_WITH_GRADERS:
-        if t["id"] == task_id:
-            task = t
-            break
-    
-    if task is None:
-        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
-    
-    grader = task.get("grader", {})
-    min_reward = grader.get("scoring", {}).get("min_reward", -300.0)
-    max_reward = grader.get("scoring", {}).get("max_reward", 50.0)
-    success_threshold = grader.get("success_threshold", 0.5)
-    
-    # Extract episode data
-    total_reward = episode_data.get("total_reward", 0.0)
-    rewards = episode_data.get("rewards", [])
-    success = episode_data.get("success", False)
-    steps = episode_data.get("steps", 0)
-    
-    # Compute normalized score (0.0-1.0)
-    if max_reward == min_reward:
-        normalized_score = 0.5
-    else:
-        normalized_score = (total_reward - min_reward) / (max_reward - min_reward)
-        normalized_score = max(0.0, min(1.0, normalized_score))
-    
-    # Determine if threshold is met
-    passed = normalized_score >= success_threshold and success
-    
-    return {
-        "task_id": task_id,
-        "grader_type": grader.get("type", "reward_based"),
-        "normalized_score": round(normalized_score, 4),
-        "success_threshold": success_threshold,
-        "passed": passed,
-        "raw_total_reward": total_reward,
-        "steps_taken": steps,
-        "episode_success": success,
-        "grading_details": {
-            "min_reward": min_reward,
-            "max_reward": max_reward,
-            "formula": "(total_reward - min_reward) / (max_reward - min_reward)",
-        },
     }
 
 
