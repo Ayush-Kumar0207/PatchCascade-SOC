@@ -32,6 +32,8 @@ dependencies = [
 ]
 
 [project.scripts]
+serve = "server:main"
+server = "server:main"
 patchcascade-server = "server:main"
 
 [project.optional-dependencies]
