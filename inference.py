@@ -190,6 +190,19 @@ Analyze this state and respond with your action as a JSON object."""
             target="",
             reason=f"Parse error fallback: {str(e)}",
         )
+    except Exception as e:
+        # Catch ALL other errors (API errors, network errors, model not found, etc.)
+        # This prevents the script from crashing due to provider issues
+        print(f"WARNING: LLM API error: {e}", file=sys.stderr)
+        if retry_count < MAX_PARSE_RETRIES:
+            await asyncio.sleep(1.0 * (retry_count + 1))
+            return await get_llm_action(client, observation, retry_count + 1)
+        
+        return PatchCascadeAction(
+            action_type=ActionType.NOOP,
+            target="",
+            reason=f"API error fallback: {str(e)[:100]}",
+        )
 
 
 # =============================================================================
