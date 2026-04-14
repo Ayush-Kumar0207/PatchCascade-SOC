@@ -21,6 +21,7 @@ tags:
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
 [![Tasks](https://img.shields.io/badge/Tasks-5_with_Graders-orange?style=for-the-badge)](.)
+[![Dashboard](https://img.shields.io/badge/Live-Dashboard-FF3355?style=for-the-badge&logo=d3.js)](http://localhost:8000/dashboard)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=for-the-badge)](LICENSE)
 
 **Train AI agents to manage vulnerability patches across enterprise networks—without crashing production.**
@@ -107,6 +108,13 @@ Security teams face an impossible tradeoff:
 ---
 
 ## ✨ Feature Highlights
+
+- **🚀 Real-Time Live Dashboard**: A premium, interactive Command Center (D3.js-powered) for visualizing network topology, reward trends, and agent decision-making.
+- **🌊 Cascade Failure Simulation**: Sophisticated dependency modeling where one unmanaged patch can bring down an entire enterprise network.
+- **🔥 Dynamic Event System**: Real-world chaos including Exploit Spreading, Zero-Day Injections, and Stochastic Degradation.
+- **📊 Multi-Dimensional Grading**: Programmatic evaluation across 4 axes: Completion, Efficiency, Safety, and Strategy.
+- **🤖 LLM-Native Design**: Pydantic models with rich semantic descriptions, purpose-built for Large Language Model comprehension.
+- **⚡ High-Performance Backbone**: FastAPI-powered async server with OpenEnv specification compliance.
 
 ### 🏢 **Tiered Asset Management**
 Not all servers are equal. Our environment models real-world criticality:
@@ -360,7 +368,7 @@ graph TB
         INF["inference.py<br>🤖 LLM Agent"] --> CLI["client.py<br>📡 HTTP Client"]
         CLI --> SRV["server.py<br>🚀 FastAPI"]
         SRV --> ENV["environment.py<br>⚙️ Core Logic"]
-        ENV --> MOD["models.py<br>📦 Pydantic Schemas"]
+        SRV --> DASH["/dashboard<br>🖥️ Live UI"]
         SRV --> GRD["grader.py<br>📊 Multi-Dim Grading"]
         SRV --> TSK["tasks/<br>📋 5 Task Definitions"]
     end
@@ -368,8 +376,8 @@ graph TB
     style INF fill:#0d6efd,color:white
     style CLI fill:#198754,color:white
     style SRV fill:#dc3545,color:white
+    style DASH fill:#ff3355,color:white
     style ENV fill:#ffc107,color:black
-    style MOD fill:#6f42c1,color:white
     style GRD fill:#fd7e14,color:white
     style TSK fill:#20c997,color:white
 ```
@@ -378,7 +386,8 @@ graph TB
 |-----------|---------| 
 | `models.py` | Pydantic schemas with rich `Field()` descriptions for LLM comprehension |
 | `environment.py` | Core state machine: reset, step, cascade logic, dynamic events, reward calculation |
-| `server.py` | FastAPI wrapper exposing `/reset`, `/step`, `/observation`, `/grade` endpoints |
+| `_server.py` | FastAPI wrapper exposing `/reset`, `/step`, and serving the **Live Dashboard** |
+| `static/` | Frontend assets (HTML/CSS/JS) for the real-time visualization |
 | `grader.py` | Multi-dimensional programmatic graders (completion, efficiency, safety, strategy) |
 | `tasks/` | 5 task definitions with individual grader configurations and success criteria |
 | `client.py` | Async HTTP client with type-safe request/response handling |
@@ -397,10 +406,8 @@ docker build -t patchcascade-soc .
 # Run the server
 docker run -p 8000:8000 patchcascade-soc
 
-# Test the endpoint
-curl -X POST http://localhost:8000/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_level": "medium"}'
+# Access the Dashboard
+# Open http://localhost:8000 in your browser!
 ```
 
 ### Option 2: Local Development
@@ -640,6 +647,7 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 | **Uvicorn** | ASGI server |
 | **Docker** | Containerization |
 | **OpenAI SDK** | LLM integration |
+| **D3.js / Canvas** | Real-time Dashboard visualization |
 
 ---
 

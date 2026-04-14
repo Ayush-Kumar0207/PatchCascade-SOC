@@ -37,6 +37,7 @@ Since you're reading this, you're probably curious about one of these things:
 - ✅ The exact math behind every reward calculation
 - ✅ How the **LLM-powered inference agent** actually works
 - ✅ Our complete **testing and validation pipeline**
+- ✅ How the **Live Command Center (Dashboard)** lets you visualize everything in real-time
 
 **No prior knowledge required.** We'll explain everything from the ground up.
 
@@ -567,6 +568,10 @@ Here's what **every single file** in our upgraded project does:
 ├───────────────────────┼──────────────────────────────────┼──────────────────────────────────┤
 │ Dockerfile            │ Container build instructions     │ The recipe book — how to set     │
 │                       │ With health checks               │ things up anywhere               │
+├───────────────────────┼──────────────────────────────────┼──────────────────────────────────┤
+│ static/ (7 files!)     │ Live Command Center (Dashboard)  │ The control room — a beautiful   │
+│                       │ Real-time visualization          │ visual interface to watch the    │
+│                       │ D3.js topology & charts          │ AI play the game.                │
 ├───────────────────────┼──────────────────────────────────┼──────────────────────────────────┤
 │ ARCHITECTURE.md       │ Design deep-dive with diagrams   │ The blueprint — how everything   │
 │                       │ Mermaid state diagrams           │ fits together architecturally    │
@@ -2159,6 +2164,34 @@ Every scenario is generated using a seeded random number generator. Same seed = 
 
 ---
 
+## 📖 Chapter 5: The Live Command Center (Dashboard)
+
+Wait, did we mention we built a **world-class dashboard** too? 🚀
+
+### 🖥️ Why a Dashboard?
+
+In the old days of cybersecurity, everything happened in a black-and-white terminal window. It was hard to see the "big picture."
+
+Our **Live Command Center** changes that. It's a premium, dark-themed web interface that lets you:
+1. **WATCH the network** — See the servers move around and connect in a live "force-directed" map.
+2. **SEE the damage** — Nodes pulse red when they're exploited and turn gray when they crash.
+3. **FOLLOW the agent** — Watch the "Action Feed" as the AI explains its reasoning in real-time.
+4. **TRACK the rewards** — See a live graph of points going up and down.
+
+### 🎮 How to Use It
+
+1. Start the server (using Docker or Python).
+2. Open your browser to `http://localhost:8000`.
+3. Pick a difficulty level (like "Hard").
+4. Click **Initialize** to build the network.
+5. Click **Auto-Run** and lean back.
+
+You'll see the AI methodically patching servers, managing downtime, and avoiding cascades—all visualized with beautiful animations and neon glow effects.
+
+> 🏆 **Hackathon Tip:** This dashboard is our secret weapon. It proves that our project isn't just "vibe coding"—it's a working, professional-grade solution that anyone can understand at a glance.
+
+---
+
 ## 📖 Chapter 19: Glossary (Expanded)
 
 ```
@@ -2232,6 +2265,7 @@ You've made it to the end of this **epic guide!** You now understand:
 ✅ **The Dynamic Events** — Exploit spreading, zero-day injection, stochastic degradation
 ✅ **The Technology** — Python 3.11, FastAPI, Pydantic v2, Docker, OpenAI API, pytest
 ✅ **The Testing** — Unit tests, integration tests, smoke tests, heuristic agent validation
+✅ **The Dashboard** — Real-time Force-Directed Topology, Live Action Feed, and Strategic Charts
 ✅ **The Code** — Every file, every function, every design decision explained
 
 ### 💡 Key Takeaways
@@ -2258,7 +2292,8 @@ Our project isn't just a demo — it's **production-grade RL infrastructure**:
 - **5 tasks**, **5 graders**, **3 client implementations**
 - **3 dynamic event systems** (exploit spreading, zero-day, degradation)
 - **Comprehensive test suite** with heuristic smoke testing
-- **Beautiful ASCII visualization** and full OpenEnv compliance
+- **Premium Live Dashboard** with D3.js topology and real-time metrics
+- **Full OpenEnv compliance** for seamless hackathon validation
 
 ---
 
