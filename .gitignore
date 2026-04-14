@@ -22,6 +22,11 @@ dist/
 build/
 *.egg-info/
 
+# RL results and models
+results/
+*.zip
+*.log
+
 # Environment variables (keep secrets out of repo)
 .env
 .env.local

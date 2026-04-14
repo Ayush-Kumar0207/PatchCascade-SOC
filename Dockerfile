@@ -31,6 +31,9 @@ COPY _server.py .
 COPY client.py .
 COPY inference.py .
 COPY grader.py .
+COPY gym_wrapper.py .
+COPY train_rl.py .
+COPY benchmark.py .
 
 # Copy tasks package
 COPY tasks/ ./tasks/
@@ -38,15 +41,20 @@ COPY tasks/ ./tasks/
 # Copy server package (OpenEnv entry point)
 COPY server/ ./server/
 
+# Copy static assets (dashboard)
+COPY static/ ./static/
+
 # Copy project config
 COPY pyproject.toml .
 
 # Copy metadata and documentation
 COPY openenv.yaml .
 COPY README.md .
+COPY EXECUTIVE_SUMMARY.md .
 COPY ARCHITECTURE.md .
 COPY EXAMPLES.md .
 COPY CONTRIBUTING.md .
+COPY BEGINNERS_GUIDE.md .
 COPY LICENSE .
 COPY smoke_test.py .
 

@@ -18,6 +18,13 @@ openai>=1.10.0
 # OpenEnv core (required for hackathon validation)
 openenv-core>=0.2.0
 
+# RL training stack (Gymnasium + Stable-Baselines3)
+gymnasium>=0.29.0
+stable-baselines3>=2.2.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+tqdm>=4.65.0
+
 # Optional: Development tools
 # pytest>=7.4.0
 # pytest-asyncio>=0.23.0

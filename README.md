@@ -586,18 +586,44 @@ Get full environment metadata including all tasks, graders, and schemas.
 | **Safety** | Cascade failures avoided | Zero cascades |
 | **Strategy** | Decision quality | Maximize |
 
-### 📊 Baseline Scores (Reference)
+### 📊 Agent Benchmark Results
 
-Based on evaluations using our `inference.py` baseline agent on the **Medium Task**.
+We evaluate four agent types across all five task levels using our multi-dimensional grading system.
+Scores are composite (Completion × Efficiency × Safety × Strategy), normalized to [0.0, 1.0].
 
-> **Note:** Scores are normalized to the 0.0–1.0 range per hackathon requirements.
+> Run `python benchmark.py --episodes 10` to reproduce these results.
 
-| Agent Type | Score | Behavior Profile |
-|------------|-------|------------------|
-| **Random Action** | `0.10–0.25` | Triggers cascade failures, wastes turns on invalid actions |
-| **Simple Heuristic** | `0.60–0.75` | Patches vulns but incurs avoidable downtime and cascades |
-| **LLM Agent (baseline)** | `0.80–0.90` | Good prioritization, occasional suboptimal ordering |
-| **Optimal (RL-trained)** | `0.95–1.00` | Perfect dependency ordering, minimal downtime |
+| Agent | Easy | Medium | Hard | IR | Zero-Day | Avg |
+|-------|:----:|:------:|:----:|:--:|:--------:|:---:|
+| **Random** | 0.80 | 0.42 | 0.32 | 0.37 | 0.43 | **0.47** |
+| **Heuristic** | 0.95 | 0.89 | 0.79 | 0.74 | 0.95 | **0.86** |
+| **PPO (RL-trained)** | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
+| **LLM Agent** | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
+
+> **Note:** RL training uses PPO via Stable-Baselines3 with our Gymnasium wrapper. See [`train_rl.py`](train_rl.py) for training scripts and hyperparameters.
+
+### 🏋️ Train Your Own Agent
+
+PatchCascade includes a Gymnasium-compatible wrapper for seamless integration with standard RL libraries:
+
+```python
+# Quick training with Stable-Baselines3
+from gym_wrapper import PatchCascadeGymEnv
+from stable_baselines3 import PPO
+
+env = PatchCascadeGymEnv(task_level="medium")
+model = PPO("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=50_000)
+```
+
+```bash
+# CLI training (all levels, curriculum learning, plotting)
+python train_rl.py --task easy --steps 10000       # Quick test
+python train_rl.py --all --steps 50000              # Train all levels
+python train_rl.py --curriculum                     # Curriculum: easy→medium→hard
+python train_rl.py --plot                           # Generate training curves
+python benchmark.py --episodes 20                   # Full benchmark suite
+```
 
 ---
 
@@ -638,6 +664,8 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 | **Pydantic v2** | Data validation & serialization |
 | **FastAPI** | High-performance async API |
 | **Uvicorn** | ASGI server |
+| **Gymnasium** | Standard RL environment interface |
+| **Stable-Baselines3** | RL training (PPO, A2C) |
 | **Docker** | Containerization |
 | **OpenAI SDK** | LLM integration |
 
