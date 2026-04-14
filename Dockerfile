@@ -38,9 +38,6 @@ COPY tasks/ ./tasks/
 # Copy server package (OpenEnv entry point)
 COPY server/ ./server/
 
-# Copy Live Dashboard
-COPY static/ ./static/
-
 # Copy project config
 COPY pyproject.toml .
 
