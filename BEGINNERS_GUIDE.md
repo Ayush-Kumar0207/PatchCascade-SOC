@@ -1,12 +1,3 @@
-<div align="center">
-  
-# 🛡️ PatchCascade SOC Academy
-
-| [🏠 **Home**](README.md) | [🎓 **Beginner's Guide**](BEGINNERS_GUIDE.md) | [🤝 **Contributing**](CONTRIBUTING.md) | [⚖️ **License**](LICENSE) |
-| :---: | :---: | :---: | :---: |
-
----
-
 # 🛡️ PatchCascade SOC
 
 ## The Complete Beginner's Guide — v2.0

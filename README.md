@@ -12,16 +12,12 @@ tags:
 
 <div align="center">
 
-# 🛡️ PatchCascade SOC Academy
+# 🛡️ PatchCascade SOC
+### *The Ultimate Cyber-Resilience Training Academy*
 
-| [🏠 **Home**](README.md) | [🎓 **Beginner's Guide**](BEGINNERS_GUIDE.md) | [🤝 **Contributing**](CONTRIBUTING.md) | [⚖️ **License**](LICENSE) |
-| :---: | :---: | :---: | :---: |
+[![Beginner's Guide](https://img.shields.io/badge/📖_Open-Beginner's_Guide-6f42c1?style=for-the-badge&logo=gitbook)](BEGINNERS_GUIDE.md)
 
 </div>
-
-<div align="center">
-
-# 🛡️ PatchCascade SOC
 
 ### *Autonomous Cyber-Resilience Through Reinforcement Learning*
 
@@ -47,21 +43,15 @@ tags:
 
 ---
 
-## 🎓 PatchCascade Academy: The Ultimate Guide
+## 🎓 Master the Environment: The Beginner's Guide
 > **"Turning beginners into elite SOC agents, one turn at a time."**
 
-Welcome to the **PatchCascade Academy**. We've built a comprehensive, 2300-line pedagogical masterpiece designed to take you from a total novice to a reinforcement learning expert.
+We've built a comprehensive, 2300-line pedagogical masterpiece designed to take you from a total novice to a reinforcement learning expert. 
 
-<div align="center">
-
-| [📖 **The Story**](BEGINNERS_GUIDE.md#-chapter-1-the-story-behind-patchcascade) | [🔗 **Dependency Map**](BEGINNERS_GUIDE.md#-what-is-a-dependency-graph) | [📊 **The Math**](BEGINNERS_GUIDE.md#-chapter-4-the-technical-details-made-simple) | [🎮 **The Dashboard**](BEGINNERS_GUIDE.md#-chapter-5-the-live-command-center-dashboard) |
-| :--- | :--- | :--- | :--- |
-| *Learn why patching is a paradox.* | *Master the hard/soft cascade logic.* | *Deep dive into reward shaping.* | *Visualize your agent in real-time.* |
-
-</div>
+[👉 **Start Your Journey: Read the Full Beginner's Guide**](BEGINNERS_GUIDE.md)
 
 > [!TIP]
-> **New to RL?** Start with [Chapter 1](BEGINNERS_GUIDE.md#-chapter-1-the-story-behind-patchcascade) of the Beginner's Guide. It uses real-world analogies (like hospital servers) to explain complex security concepts without a single line of code.
+> **New to RL?** The guide uses real-world analogies (like hospital servers) to explain complex security concepts without a single line of code. It's the perfect starting point for your first hackathon submission.
 
 ---
 
