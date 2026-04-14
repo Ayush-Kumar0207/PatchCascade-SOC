@@ -209,7 +209,7 @@ async def root():
     """Root endpoint — redirects to the Live Dashboard if available, else API info."""
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists() and (static_dir / "index.html").exists():
-        return RedirectResponse(url="/dashboard")
+        return RedirectResponse(url="/dashboard/")
     return {
         "name": "PatchCascade SOC",
         "version": "2.0.0",
@@ -223,7 +223,7 @@ async def root():
             "tasks": "GET /tasks",
             "metadata": "GET /metadata",
             "grade": "POST /grade/{task_id}",
-            "dashboard": "GET /dashboard",
+            "dashboard": "GET /dashboard/",
         },
         "documentation": "/docs",
     }
@@ -236,7 +236,7 @@ async def api_info() -> dict:
         "name": "PatchCascade SOC",
         "version": "2.0.0",
         "description": "OpenEnv-compliant RL environment for vulnerability patch management",
-        "dashboard": "/dashboard",
+        "dashboard": "/dashboard/",
         "documentation": "/docs",
     }
 
