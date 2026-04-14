@@ -60,3 +60,21 @@ markers = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.setuptools]
+py-modules = [
+    "models",
+    "environment",
+    "_server",
+    "client",
+    "inference",
+    "grader",
+    "gym_wrapper",
+    "train_rl",
+    "benchmark",
+    "smoke_test"
+]
+
+[tool.setuptools.packages.find]
+include = ["server*", "tasks*"]
+exclude = ["results*", "static*", "tests*", "docs*"]
