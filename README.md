@@ -21,12 +21,12 @@ tags:
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
 [![Tasks](https://img.shields.io/badge/Tasks-5_with_Graders-orange?style=for-the-badge)](.)
-[![Dashboard](https://img.shields.io/badge/Live-Dashboard-FF3355?style=for-the-badge&logo=d3.js)](https://huggingface.co/spaces/Ayush-Kumar0207/patchcascade-soc)
+[![Dashboard](https://img.shields.io/badge/Live-Dashboard-FF3355?style=for-the-badge&logo=d3.js)](https://ayush-kumar0207-patchcascade-soc.hf.space/dashboard/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=for-the-badge)](LICENSE)
 
 **Train AI agents to manage vulnerability patches across enterprise networks—without crashing production.**
 
-> 🚀 **Live Command Center**: View the live production deployment of the dashboard at **[https://huggingface.co/spaces/Ayush-Kumar0207/patchcascade-soc](https://huggingface.co/spaces/Ayush-Kumar0207/patchcascade-soc)**
+> 🚀 **Live Command Center**: View the live dashboard at **[https://ayush-kumar0207-patchcascade-soc.hf.space/dashboard/](https://ayush-kumar0207-patchcascade-soc.hf.space/dashboard/)**
 
 [Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [Grading Logic](#-multi-dimensional-grading) • [API Reference](#-api-reference) • [Contributors](#-contributors)
 
