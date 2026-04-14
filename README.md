@@ -21,10 +21,12 @@ tags:
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
 [![Tasks](https://img.shields.io/badge/Tasks-5_with_Graders-orange?style=for-the-badge)](.)
-[![Dashboard](https://img.shields.io/badge/Live-Dashboard-FF3355?style=for-the-badge&logo=d3.js)](http://localhost:8000/dashboard)
+[![Dashboard](https://img.shields.io/badge/Live-Dashboard-FF3355?style=for-the-badge&logo=d3.js)](http://localhost:8000/dashboard/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=for-the-badge)](LICENSE)
 
 **Train AI agents to manage vulnerability patches across enterprise networks—without crashing production.**
+
+> 🚀 **Live Command Center**: Once running, monitor your AI agents in real-time at **[http://localhost:8000/dashboard/](http://localhost:8000/dashboard/)**
 
 [Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [Grading Logic](#-multi-dimensional-grading) • [API Reference](#-api-reference) • [Contributors](#-contributors)
 
@@ -407,7 +409,7 @@ docker build -t patchcascade-soc .
 docker run -p 8000:8000 patchcascade-soc
 
 # Access the Dashboard
-# Open http://localhost:8000 in your browser!
+# Open http://localhost:8000/dashboard/ in your browser!
 ```
 
 ### Option 2: Local Development
@@ -418,6 +420,9 @@ pip install -r requirements.txt
 
 # Start the server
 uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+
+# Access the Dashboard
+# Open http://localhost:8000/dashboard/ in your browser!
 
 # Run the baseline agent
 export HF_TOKEN="your_huggingface_token"
