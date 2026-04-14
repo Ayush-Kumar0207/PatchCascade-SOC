@@ -1,6 +1,27 @@
+<div align="center">
+  
+# 🛡️ PatchCascade SOC Academy
+
+| [🏠 **Home**](README.md) | [🎓 **Beginner's Guide**](BEGINNERS_GUIDE.md) | [🤝 **Contributing**](CONTRIBUTING.md) | [⚖️ **License**](LICENSE) |
+| :---: | :---: | :---: | :---: |
+
+---
+
 # 🛡️ PatchCascade SOC
 
 ## The Complete Beginner's Guide — v2.0
+
+### 🧭 Quick Navigation Grid
+| Chapter | Topic | Highlights |
+| :--- | :--- | :--- |
+| [**1-2**](file:///c:/Users/kumar/Desktop/PatchCascade%20SOC/BEGINNERS_GUIDE.md#L48) | **The Story** | Hospital analogies & Why patching is hard |
+| [**3-4**](file:///c:/Users/kumar/Desktop/PatchCascade%20SOC/BEGINNERS_GUIDE.md#L143) | **Key Concepts** | Servers, Hard/Soft Dependencies, CVSS |
+| [**5-6**](file:///c:/Users/kumar/Desktop/PatchCascade%20SOC/BEGINNERS_GUIDE.md#L484) | **How it Works** | The 6-phase pipeline & File map |
+| [**7-10**](file:///c:/Users/kumar/Desktop/PatchCascade%20SOC/BEGINNERS_GUIDE.md#L750) | **Deep Dive** | Tiers, States, Rewards, 5-Level Curriculum |
+| [**11-15**](file:///c:/Users/kumar/Desktop/PatchCascade%20SOC/BEGINNERS_GUIDE.md#L1200) | **Advanced** | Exploit Spreading, Zero-Days, Multi-Dim Grading |
+| [**16-19**](file:///c:/Users/kumar/Desktop/PatchCascade%20SOC/BEGINNERS_GUIDE.md#L2009) | **Ops & FAQ** | Live Dashboard, Running Docker, Design Philosophy |
+
+---
 
 ## Understanding Our Project From Scratch
 

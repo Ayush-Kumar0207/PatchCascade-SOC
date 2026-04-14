@@ -1,3 +1,12 @@
+<div align="center">
+  
+# 🛡️ PatchCascade SOC Academy
+
+| [🏠 **Home**](README.md) | [🎓 **Beginner's Guide**](BEGINNERS_GUIDE.md) | [🤝 **Contributing**](CONTRIBUTING.md) | [⚖️ **License**](LICENSE) |
+| :---: | :---: | :---: | :---: |
+
+---
+
 # Contributing to PatchCascade SOC
 
 Thank you for your interest in contributing to PatchCascade SOC! This document provides guidelines for contributing to the project.
