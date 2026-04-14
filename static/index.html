@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PatchCascade SOC — Live Command Center</title>
+    <meta name="description" content="Real-time Security Operations Center simulation dashboard for autonomous vulnerability patch management across enterprise networks.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+    <!-- Particle background canvas -->
+    <canvas id="particles-bg"></canvas>
+
+    <!-- Scan line overlay -->
+    <div class="scanline-overlay"></div>
+
+    <!-- Main App Container -->
+    <div id="app" class="app-container">
+
+        <!-- ===== TOP NAV BAR ===== -->
+        <header class="top-bar">
+            <div class="top-bar__left">
+                <div class="logo-group">
+                    <div class="logo-icon pulse-glow">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <span class="logo-title">PatchCascade <span class="accent">SOC</span></span>
+                        <span class="logo-subtitle">LIVE COMMAND CENTER</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-bar__center">
+                <div class="status-indicators">
+                    <div class="status-dot" id="server-status">
+                        <span class="dot"></span>
+                        <span class="label">SERVER</span>
+                    </div>
+                    <div class="status-dot" id="agent-status">
+                        <span class="dot yellow"></span>
+                        <span class="label">AGENT</span>
+                    </div>
+                    <div class="status-dot" id="env-status">
+                        <span class="dot red"></span>
+                        <span class="label">ENV</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-bar__right">
+                <div class="turn-display" id="turn-display">
+                    <span class="turn-label">TURN</span>
+                    <span class="turn-value" id="turn-value">0</span>
+                    <span class="turn-sep">/</span>
+                    <span class="turn-max" id="turn-max">50</span>
+                </div>
+                <button class="nav-tab" id="tab-dashboard" data-view="dashboard" onclick="switchView('dashboard')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    Dashboard
+                </button>
+                <button class="nav-tab" id="tab-architecture" data-view="architecture" onclick="switchView('architecture')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                    Architecture
+                </button>
+            </div>
+        </header>
+
+        <!-- ===== DASHBOARD VIEW ===== -->
+        <main class="dashboard-view active" id="view-dashboard">
+
+            <!-- Row 1: Metrics Strip -->
+            <section class="metrics-strip">
+                <div class="metric-card" id="metric-score">
+                    <div class="metric-icon score-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="val-score">0.000</span>
+                        <span class="metric-label">COMPOSITE SCORE</span>
+                    </div>
+                    <div class="metric-trend up" id="trend-score">—</div>
+                </div>
+                <div class="metric-card" id="metric-reward">
+                    <div class="metric-icon reward-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="val-reward">0.00</span>
+                        <span class="metric-label">TOTAL REWARD</span>
+                    </div>
+                    <div class="metric-trend" id="trend-reward">—</div>
+                </div>
+                <div class="metric-card" id="metric-vulns">
+                    <div class="metric-icon vuln-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="val-vulns">0</span>
+                        <span class="metric-label">ACTIVE VULNS</span>
+                    </div>
+                    <div class="metric-trend" id="trend-vulns">—</div>
+                </div>
+                <div class="metric-card" id="metric-nodes">
+                    <div class="metric-icon node-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value"><span id="val-online">0</span>/<span id="val-total">0</span></span>
+                        <span class="metric-label">NODES ONLINE</span>
+                    </div>
+                    <div class="metric-trend" id="trend-nodes">—</div>
+                </div>
+                <div class="metric-card" id="metric-cascades">
+                    <div class="metric-icon cascade-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="val-cascades">0</span>
+                        <span class="metric-label">CASCADES</span>
+                    </div>
+                    <div class="metric-trend" id="trend-cascades">—</div>
+                </div>
+            </section>
+
+            <!-- Row 2: Main Content -->
+            <section class="main-grid">
+
+                <!-- LEFT: Network Topology -->
+                <div class="panel panel--topology" id="panel-topology">
+                    <div class="panel__header">
+                        <h2 class="panel__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><line x1="12" y1="8" x2="12" y2="16"/><circle cx="6" cy="19" r="3"/><circle cx="18" cy="19" r="3"/><line x1="12" y1="16" x2="6" y2="16"/><line x1="12" y1="16" x2="18" y2="16"/></svg>
+                            Network Topology
+                        </h2>
+                        <div class="panel__badge" id="topology-task-badge">NO TASK</div>
+                    </div>
+                    <div class="topology-container">
+                        <canvas id="topology-canvas"></canvas>
+                        <div class="topology-legend">
+                            <span class="legend-item"><span class="legend-dot" style="background:#00ff88"></span>Online</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#ffaa00"></span>Suspended</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#00bbff"></span>Patching</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#ff3355"></span>Crashed</span>
+                            <span class="legend-item"><span class="legend-dot legend-dot--vuln"></span>Has Vuln</span>
+                            <span class="legend-item"><span class="legend-dot legend-dot--exploit"></span>Exploited</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT TOP: Controls + Grading -->
+                <div class="right-stack">
+
+                    <!-- Controls Panel -->
+                    <div class="panel panel--controls" id="panel-controls">
+                        <div class="panel__header">
+                            <h2 class="panel__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Simulation Controls
+                            </h2>
+                        </div>
+                        <div class="controls-body">
+                            <div class="task-selector">
+                                <label class="control-label">TASK LEVEL</label>
+                                <div class="task-pills" id="task-pills">
+                                    <button class="pill active" data-task="easy" onclick="selectTask('easy')">
+                                        <span class="pill-dot" style="background:#00ff88"></span>Easy
+                                    </button>
+                                    <button class="pill" data-task="medium" onclick="selectTask('medium')">
+                                        <span class="pill-dot" style="background:#ffaa00"></span>Medium
+                                    </button>
+                                    <button class="pill" data-task="hard" onclick="selectTask('hard')">
+                                        <span class="pill-dot" style="background:#ff3355"></span>Hard
+                                    </button>
+                                    <button class="pill" data-task="incident_response" onclick="selectTask('incident_response')">
+                                        <span class="pill-dot" style="background:#aa55ff"></span>Incident
+                                    </button>
+                                    <button class="pill" data-task="zero_day" onclick="selectTask('zero_day')">
+                                        <span class="pill-dot" style="background:#ffffff"></span>Zero-Day
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn--primary btn--glow" id="btn-reset" onclick="resetEnvironment()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                    Initialize
+                                </button>
+                                <button class="btn btn--accent" id="btn-step" onclick="stepEnvironment()" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                    Step
+                                </button>
+                                <button class="btn btn--success" id="btn-autorun" onclick="toggleAutoRun()" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="3" x2="19" y2="21"/></svg>
+                                    Auto-Run
+                                </button>
+                                <button class="btn btn--warning" id="btn-grade" onclick="gradeEpisode()" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                    Grade
+                                </button>
+                            </div>
+                            <div class="speed-control">
+                                <label class="control-label">AUTO-RUN SPEED</label>
+                                <input type="range" id="speed-slider" min="100" max="2000" value="800" step="100">
+                                <span class="speed-value" id="speed-value">800ms</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Grading Radar -->
+                    <div class="panel panel--grading" id="panel-grading">
+                        <div class="panel__header">
+                            <h2 class="panel__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                                Multi-Dimensional Grading
+                            </h2>
+                        </div>
+                        <div class="grading-body">
+                            <canvas id="radar-canvas"></canvas>
+                            <div class="grade-scores" id="grade-scores">
+                                <div class="grade-item"><span class="grade-dot" style="background:#00ff88"></span><span class="grade-label">Completion</span><span class="grade-val" id="grade-completion">—</span></div>
+                                <div class="grade-item"><span class="grade-dot" style="background:#00bbff"></span><span class="grade-label">Efficiency</span><span class="grade-val" id="grade-efficiency">—</span></div>
+                                <div class="grade-item"><span class="grade-dot" style="background:#ff3355"></span><span class="grade-label">Safety</span><span class="grade-val" id="grade-safety">—</span></div>
+                                <div class="grade-item"><span class="grade-dot" style="background:#aa55ff"></span><span class="grade-label">Strategy</span><span class="grade-val" id="grade-strategy">—</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Row 3: Bottom Panels -->
+            <section class="bottom-grid">
+                <!-- Reward Chart -->
+                <div class="panel panel--chart" id="panel-chart">
+                    <div class="panel__header">
+                        <h2 class="panel__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                            Reward Timeline
+                        </h2>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="reward-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Action Feed -->
+                <div class="panel panel--feed" id="panel-feed">
+                    <div class="panel__header">
+                        <h2 class="panel__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            Agent Action Feed
+                        </h2>
+                    </div>
+                    <div class="feed-container" id="feed-container">
+                        <div class="feed-empty">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            <p>Initialize a task to begin simulation</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Vulnerability Intel -->
+                <div class="panel panel--vulns" id="panel-vulns">
+                    <div class="panel__header">
+                        <h2 class="panel__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            Vulnerability Intel
+                        </h2>
+                    </div>
+                    <div class="vulns-container" id="vulns-container">
+                        <div class="feed-empty">
+                            <p>No active vulnerabilities</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- ===== ARCHITECTURE VIEW ===== -->
+        <main class="architecture-view" id="view-architecture">
+            <div class="arch-hero">
+                <h1 class="arch-title">System Architecture</h1>
+                <p class="arch-subtitle">PatchCascade SOC — Internal Processing Pipeline</p>
+            </div>
+
+            <div class="arch-grid">
+                <!-- Stack Overview -->
+                <div class="panel panel--arch-stack">
+                    <div class="panel__header"><h2 class="panel__title">Tech Stack</h2></div>
+                    <div class="stack-list">
+                        <div class="stack-item"><span class="stack-badge python">Python 3.11+</span><span>Core Language</span></div>
+                        <div class="stack-item"><span class="stack-badge pydantic">Pydantic v2</span><span>Data Validation & Serialization</span></div>
+                        <div class="stack-item"><span class="stack-badge fastapi">FastAPI</span><span>High-Performance Async API</span></div>
+                        <div class="stack-item"><span class="stack-badge docker">Docker</span><span>Containerization & Deployment</span></div>
+                        <div class="stack-item"><span class="stack-badge openai">OpenAI SDK</span><span>LLM Agent Integration</span></div>
+                        <div class="stack-item"><span class="stack-badge openenv">OpenEnv</span><span>RL Environment Protocol</span></div>
+                    </div>
+                </div>
+
+                <!-- Request Flow -->
+                <div class="panel panel--arch-flow">
+                    <div class="panel__header"><h2 class="panel__title">Request Flow Pipeline</h2></div>
+                    <div class="flow-diagram" id="flow-diagram">
+                        <div class="flow-node flow-agent">
+                            <div class="flow-icon">🤖</div>
+                            <div class="flow-label">LLM Agent</div>
+                            <div class="flow-sub">inference.py</div>
+                        </div>
+                        <div class="flow-arrow"><div class="flow-arrow-line"></div><span>JSON Action</span></div>
+                        <div class="flow-node flow-client">
+                            <div class="flow-icon">📡</div>
+                            <div class="flow-label">HTTP Client</div>
+                            <div class="flow-sub">client.py</div>
+                        </div>
+                        <div class="flow-arrow"><div class="flow-arrow-line"></div><span>POST /step</span></div>
+                        <div class="flow-node flow-server">
+                            <div class="flow-icon">🚀</div>
+                            <div class="flow-label">FastAPI Server</div>
+                            <div class="flow-sub">_server.py</div>
+                        </div>
+                        <div class="flow-arrow"><div class="flow-arrow-line"></div><span>env.step()</span></div>
+                        <div class="flow-node flow-env">
+                            <div class="flow-icon">⚙️</div>
+                            <div class="flow-label">Environment</div>
+                            <div class="flow-sub">environment.py</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- State Machine -->
+                <div class="panel panel--arch-states">
+                    <div class="panel__header"><h2 class="panel__title">Node State Machine</h2></div>
+                    <div class="state-machine" id="state-machine">
+                        <div class="sm-node sm-online" id="sm-online">
+                            <span class="sm-dot" style="background:#00ff88"></span>ONLINE
+                            <div class="sm-note">Serving traffic<br>Accrues RISK penalty</div>
+                        </div>
+                        <div class="sm-node sm-suspended" id="sm-suspended">
+                            <span class="sm-dot" style="background:#ffaa00"></span>SUSPENDED
+                            <div class="sm-note">Gracefully offline<br>Required for Tier 1 patching</div>
+                        </div>
+                        <div class="sm-node sm-patching" id="sm-patching">
+                            <span class="sm-dot" style="background:#00bbff"></span>PATCHING
+                            <div class="sm-note">Patch in progress<br>Auto-returns to ONLINE</div>
+                        </div>
+                        <div class="sm-node sm-crashed" id="sm-crashed">
+                            <span class="sm-dot" style="background:#ff3355"></span>CRASHED
+                            <div class="sm-note">Failed!<br>2× downtime penalty</div>
+                        </div>
+                        <!-- SVG arrows drawn by JS -->
+                        <svg class="sm-arrows" id="sm-arrows"></svg>
+                    </div>
+                </div>
+
+                <!-- Step Pipeline -->
+                <div class="panel panel--arch-pipeline">
+                    <div class="panel__header"><h2 class="panel__title">6-Phase Step Processing Pipeline</h2></div>
+                    <div class="pipeline">
+                        <div class="pipe-phase" style="--phase-color: #0088ff">
+                            <div class="pipe-num">1</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Validation</span>
+                                <span class="pipe-desc">Check action legality, target existence, state compatibility</span>
+                            </div>
+                        </div>
+                        <div class="pipe-connector"></div>
+                        <div class="pipe-phase" style="--phase-color: #00ff88">
+                            <div class="pipe-num">2</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Action Application</span>
+                                <span class="pipe-desc">Execute scan/suspend/patch/resume on target node</span>
+                            </div>
+                        </div>
+                        <div class="pipe-connector"></div>
+                        <div class="pipe-phase" style="--phase-color: #ffaa00">
+                            <div class="pipe-num">3</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Time Progression</span>
+                                <span class="pipe-desc">Decrement patch timers, advance turn counter</span>
+                            </div>
+                        </div>
+                        <div class="pipe-connector"></div>
+                        <div class="pipe-phase" style="--phase-color: #ff8800">
+                            <div class="pipe-num">3.5</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Dynamic Events</span>
+                                <span class="pipe-desc">Exploit spreading, zero-day injection, stochastic degradation</span>
+                            </div>
+                        </div>
+                        <div class="pipe-connector"></div>
+                        <div class="pipe-phase" style="--phase-color: #ff3355">
+                            <div class="pipe-num">4</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Dependency Cascade</span>
+                                <span class="pipe-desc">Propagate failures through dependency graph</span>
+                            </div>
+                        </div>
+                        <div class="pipe-connector"></div>
+                        <div class="pipe-phase" style="--phase-color: #aa55ff">
+                            <div class="pipe-num">5</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Health & Reward</span>
+                                <span class="pipe-desc">Calculate penalties, compute shaped reward R = Φ(s) - Φ(s') - 0.1</span>
+                            </div>
+                        </div>
+                        <div class="pipe-connector"></div>
+                        <div class="pipe-phase" style="--phase-color: #ffffff">
+                            <div class="pipe-num">6</div>
+                            <div class="pipe-info">
+                                <span class="pipe-name">Termination Check</span>
+                                <span class="pipe-desc">Victory (all patched), catastrophe (all crashed), or timeout</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grading Architecture -->
+                <div class="panel panel--arch-grading">
+                    <div class="panel__header"><h2 class="panel__title">Multi-Dimensional Grading</h2></div>
+                    <div class="grading-arch">
+                        <div class="ga-dimension" style="--dim-color: #00ff88">
+                            <div class="ga-weight">40%</div>
+                            <div class="ga-bar"><div class="ga-fill" style="width:100%"></div></div>
+                            <div class="ga-info">
+                                <span class="ga-name">Completion</span>
+                                <span class="ga-desc">Were all vulnerabilities patched?</span>
+                            </div>
+                        </div>
+                        <div class="ga-dimension" style="--dim-color: #00bbff">
+                            <div class="ga-weight">20%</div>
+                            <div class="ga-bar"><div class="ga-fill" style="width:50%"></div></div>
+                            <div class="ga-info">
+                                <span class="ga-name">Efficiency</span>
+                                <span class="ga-desc">Steps taken vs. theoretical optimum</span>
+                            </div>
+                        </div>
+                        <div class="ga-dimension" style="--dim-color: #ff3355">
+                            <div class="ga-weight">20%</div>
+                            <div class="ga-bar"><div class="ga-fill" style="width:50%"></div></div>
+                            <div class="ga-info">
+                                <span class="ga-name">Safety</span>
+                                <span class="ga-desc">Cascade failures avoided</span>
+                            </div>
+                        </div>
+                        <div class="ga-dimension" style="--dim-color: #aa55ff">
+                            <div class="ga-weight">20%</div>
+                            <div class="ga-bar"><div class="ga-fill" style="width:50%"></div></div>
+                            <div class="ga-info">
+                                <span class="ga-name">Strategy</span>
+                                <span class="ga-desc">Decision quality & prioritization</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reward Formula -->
+                <div class="panel panel--arch-reward">
+                    <div class="panel__header"><h2 class="panel__title">Reward Shaping Formula</h2></div>
+                    <div class="formula-display">
+                        <div class="formula-main">
+                            <span class="formula-var">R<sub>t</sub></span>
+                            <span class="formula-eq">=</span>
+                            <span class="formula-fn">Φ(S<sub>t-1</sub>)</span>
+                            <span class="formula-op">−</span>
+                            <span class="formula-fn">Φ(S<sub>t</sub>)</span>
+                            <span class="formula-op">−</span>
+                            <span class="formula-const">0.1</span>
+                            <span class="formula-op">+</span>
+                            <span class="formula-var">R<sub>terminal</sub></span>
+                        </div>
+                        <div class="formula-explain">
+                            <div class="fe-row"><span class="fe-sym">Φ(S)</span><span class="fe-desc">= Risk Penalty + Downtime Penalty (potential function)</span></div>
+                            <div class="fe-row"><span class="fe-sym">−0.1</span><span class="fe-desc">= Time pressure (ensures dense non-zero reward every step)</span></div>
+                            <div class="fe-row"><span class="fe-sym">R<sub>terminal</sub></span><span class="fe-desc">= +50 (victory) | −100 (catastrophe) | 0 (ongoing)</span></div>
+                        </div>
+                        <div class="formula-cite">Based on: Ng, Harada & Russell (1999) — Policy invariance under reward transformations</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ===== TOAST NOTIFICATIONS ===== -->
+        <div class="toast-container" id="toast-container"></div>
+
+        <!-- ===== EPISODE RESULT MODAL ===== -->
+        <div class="modal-overlay" id="result-modal">
+            <div class="modal-card">
+                <div class="modal-icon" id="modal-icon">🏆</div>
+                <h2 class="modal-title" id="modal-title">Episode Complete</h2>
+                <p class="modal-subtitle" id="modal-subtitle">All vulnerabilities patched!</p>
+                <div class="modal-stats" id="modal-stats"></div>
+                <button class="btn btn--primary btn--glow modal-close" onclick="closeModal()">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/topology.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

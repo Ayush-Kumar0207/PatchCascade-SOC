@@ -13,8 +13,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from environment import PatchCascadeEnv, StepResult
@@ -200,11 +205,14 @@ app.add_middleware(
 
 
 @app.get("/")
-async def root() -> dict:
-    """Root endpoint with API info."""
+async def root():
+    """Root endpoint — redirects to the Live Dashboard if available, else API info."""
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists() and (static_dir / "index.html").exists():
+        return RedirectResponse(url="/dashboard")
     return {
         "name": "PatchCascade SOC",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "description": "OpenEnv-compliant RL environment for vulnerability patch management",
         "endpoints": {
             "health": "GET /health",
@@ -215,7 +223,20 @@ async def root() -> dict:
             "tasks": "GET /tasks",
             "metadata": "GET /metadata",
             "grade": "POST /grade/{task_id}",
+            "dashboard": "GET /dashboard",
         },
+        "documentation": "/docs",
+    }
+
+
+@app.get("/api")
+async def api_info() -> dict:
+    """API info endpoint (always returns JSON, even when dashboard is active)."""
+    return {
+        "name": "PatchCascade SOC",
+        "version": "2.0.0",
+        "description": "OpenEnv-compliant RL environment for vulnerability patch management",
+        "dashboard": "/dashboard",
         "documentation": "/docs",
     }
 
@@ -476,6 +497,15 @@ async def get_metadata() -> dict:
 # =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
+
+# =============================================================================
+# STATIC FILES — Live Dashboard (mounted AFTER all API routes)
+# =============================================================================
+
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(_static_dir), html=True), name="dashboard")
+
 
 def main():
     """Entry point for the patchcascade-server command."""
