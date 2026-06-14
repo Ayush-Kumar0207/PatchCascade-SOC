@@ -681,8 +681,6 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**Built for the Meta PyTorch OpenEnv Hackathon 2026**
-
 **Created by Ayush Kumar & Ravi Prashant**
 
 *Train smarter. Patch faster. Crash never.*
