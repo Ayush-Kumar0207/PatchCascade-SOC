@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-PatchCascade SOC — RL Training Script
+PatchCascade SOC — Legacy/Exploratory RL Training Script
 =======================================
+
+This file is retained for small interactive experiments and historical
+compatibility. It does not implement the canonical run lock, complete resume
+identity, held-out split protocol, or artifact gate. Research contributions must
+use ``train_canonical.py --spec training_specs/canonical_v1.json``.
 
 Train reinforcement learning agents on PatchCascade SOC using
 Stable-Baselines3. Supports multiple algorithms, all 5 task levels,

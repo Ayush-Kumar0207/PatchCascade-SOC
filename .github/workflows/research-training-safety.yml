@@ -1,0 +1,32 @@
+name: research-training-safety
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cpu-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install matplotlib tqdm
+      - name: Static validation
+        run: |
+          python -m json.tool training_specs/canonical_v1.json > /dev/null
+          python -m compileall -q . -x '/(\.git|\.venv|static)/'
+      - name: Tests and smoke test
+        run: |
+          python -m pytest -q
+          python smoke_test.py
+      - name: Security/spec preflight without optimizer or dependency lock
+        run: python tools/training_preflight.py --spec training_specs/canonical_v1.json --skip-tests --allow-unlocked-dependencies

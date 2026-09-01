@@ -82,6 +82,10 @@ CATASTROPHIC_FAILURE_PENALTY: float = -100.0
 # even when state doesn't change (e.g. noop). Incentivizes efficient patching.
 TIME_PRESSURE_PENALTY: float = -0.1
 
+# Discount used by the canonical PPO configuration and by potential-based
+# shaping. Keeping these equal is required for the policy-invariance theorem.
+SHAPING_GAMMA: float = 0.99
+
 # Default max turns by difficulty
 MAX_TURNS_BY_DIFFICULTY: dict[str, int] = {
     "easy": 30,
@@ -989,18 +993,23 @@ class PatchCascadeEnv:
             self._process_dynamic_events()
             self._process_dependency_cascade()
             
-            # Calculate reward (penalty for invalid action)
+            # Calculate state transition before reward so terminal potential is
+            # handled consistently even if a pending patch completes.
+            previous_penalty = self._last_total_penalty
             current_penalty = self._calculate_total_penalty(self._state.nodes, self._state.vulnerabilities)
-            reward = (self._last_total_penalty - current_penalty) + INVALID_ACTION_PENALTY + TIME_PRESSURE_PENALTY
             self._last_total_penalty = current_penalty
-            self._state.reward_history.append(reward)
-            
-            # Update health and check termination
             self._update_health_metrics()
             done, truncated = self._check_termination()
+            reward, reward_components = self._calculate_shaped_reward(
+                previous_penalty, current_penalty, done and not truncated,
+                invalid_action=True,
+            )
+            self._state.reward_history.append(reward)
             
             info["valid"] = False
             info["error"] = error_msg
+            info["reward_components"] = reward_components
+            info["termination_reason"] = self._state.termination_reason
             
             return StepResult(
                 observation=self.get_observation(),
@@ -1020,6 +1029,11 @@ class PatchCascadeEnv:
         # PHASE 3: Time Progression (The "Tick")
         # ---------------------------------------------------------------------
         self._process_time_progression()
+
+        # A consumed action advances the turn before turn-indexed dynamic events.
+        # Invalid actions already increment at validation time; both paths now
+        # have identical event timing.
+        self._state.turn_number += 1
         
         # ---------------------------------------------------------------------
         # PHASE 3.5: Dynamic Events (Zero-Day injection, exploit spreading)
@@ -1037,30 +1051,25 @@ class PatchCascadeEnv:
         # ---------------------------------------------------------------------
         # PHASE 5: Health Calculation & Reward
         # ---------------------------------------------------------------------
+        previous_penalty = self._last_total_penalty
         current_penalty = self._calculate_total_penalty(self._state.nodes, self._state.vulnerabilities)
-        
-        # Reward = improvement in penalty (lower is better, so we want positive reward for decrease)
-        # Time pressure ensures non-zero reward every step (dense signal)
-        reward = (self._last_total_penalty - current_penalty) + TIME_PRESSURE_PENALTY
         self._last_total_penalty = current_penalty
-        self._state.reward_history.append(reward)
-        
         self._update_health_metrics()
-        self._state.turn_number += 1
         
         # ---------------------------------------------------------------------
         # PHASE 6: Termination Check
         # ---------------------------------------------------------------------
         done, truncated = self._check_termination()
         
-        # Apply terminal bonuses/penalties
-        if done and not truncated:
-            if self._state.termination_reason == "all_patched":
-                reward += VICTORY_BONUS
-                self._messages.append("VICTORY! All vulnerabilities patched successfully.")
-            elif self._state.termination_reason == "all_crashed":
-                reward += CATASTROPHIC_FAILURE_PENALTY
-                self._messages.append("CATASTROPHIC FAILURE! All nodes have crashed.")
+        reward, reward_components = self._calculate_shaped_reward(
+            previous_penalty, current_penalty, done and not truncated,
+            invalid_action=False,
+        )
+        self._state.reward_history.append(reward)
+        if self._state.termination_reason == "all_patched":
+            self._messages.append("VICTORY! All vulnerabilities patched successfully.")
+        elif self._state.termination_reason == "all_crashed":
+            self._messages.append("CATASTROPHIC FAILURE! All nodes have crashed.")
         
         info["valid"] = True
         info["cascade_failures"] = cascade_count
@@ -1068,6 +1077,8 @@ class PatchCascadeEnv:
         info["invalid_actions"] = self._invalid_action_count
         info["initial_vulnerability_count"] = self._initial_vuln_count
         info["patches_completed"] = len([m for m in self._messages if "Patch completed" in m])
+        info["reward_components"] = reward_components
+        info["termination_reason"] = self._state.termination_reason
         
         return StepResult(
             observation=self.get_observation(),
@@ -1076,6 +1087,33 @@ class PatchCascadeEnv:
             truncated=truncated,
             info=info,
         )
+
+    def _calculate_shaped_reward(
+        self,
+        previous_penalty: float,
+        current_penalty: float,
+        terminated: bool,
+        *,
+        invalid_action: bool,
+    ) -> tuple[float, dict[str, float]]:
+        """Return base reward plus gamma*Phi(next)-Phi(previous).
+
+        Phi(s) is negative total penalty. True terminal states use zero
+        potential; time-limit truncations retain their state potential.
+        """
+        previous_potential = -previous_penalty
+        next_potential = 0.0 if terminated else -current_penalty
+        shaping = SHAPING_GAMMA * next_potential - previous_potential
+        base = TIME_PRESSURE_PENALTY
+        if invalid_action:
+            base += INVALID_ACTION_PENALTY
+        if terminated and self._state is not None:
+            if self._state.termination_reason == "all_patched":
+                base += VICTORY_BONUS
+            elif self._state.termination_reason == "all_crashed":
+                base += CATASTROPHIC_FAILURE_PENALTY
+        components = {"base": base, "potential_shaping": shaping, "gamma": SHAPING_GAMMA}
+        return base + shaping, components
     
     def _apply_action(self, action: PatchCascadeAction) -> None:
         """Apply a validated action to the environment state."""
@@ -1294,7 +1332,9 @@ class PatchCascadeEnv:
         candidates -= affected
         
         if candidates:
-            return self._rng.choice(list(candidates))
+            # Sets have process-randomized iteration order; sorting is required
+            # for cross-process deterministic seeds.
+            return self._rng.choice(sorted(candidates))
         return None
     
     def _process_zero_day_injection(self) -> None:
@@ -1651,7 +1691,7 @@ class PatchCascadeEnv:
         
         # Build header
         task_name = self._task_level.replace("_", " ").title()
-        header = f"🛡️ PatchCascade SOC — Turn {self._state.turn_number}/{self._state.max_turns} ({task_name})"
+        header = f"🛡️ PATCHCASCADE SOC — Turn {self._state.turn_number}/{self._state.max_turns} ({task_name})"
         
         lines = [
             "╔" + "═" * (W - 2) + "╗",

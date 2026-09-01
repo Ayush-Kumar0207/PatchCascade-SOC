@@ -57,6 +57,7 @@ MAX_DEPS = 20        # Complex graphs can have many edges
 # Feature sizes per element
 NODE_FEATURES = 6    # tier, state, patch_turns, has_vuln, is_exploited, is_critical_tier
 VULN_FEATURES = 5    # cvss, severity_code, num_affected, exploit_in_wild, patch_available
+VULN_HOST_MATRIX_SIZE = MAX_VULNS * MAX_NODES  # explicit CVE-to-host incidence
 DEP_FEATURES = 4     # from_node_idx, to_node_idx, is_hard, exists
 HEALTH_FEATURES = 11 # all NetworkHealth fields
 
@@ -64,6 +65,7 @@ HEALTH_FEATURES = 11 # all NetworkHealth fields
 OBS_SIZE = (
     MAX_NODES * NODE_FEATURES
     + MAX_VULNS * VULN_FEATURES
+    + VULN_HOST_MATRIX_SIZE
     + MAX_DEPS * DEP_FEATURES
     + HEALTH_FEATURES
 )
@@ -149,6 +151,7 @@ class PatchCascadeGymEnv(gym.Env):
         self._idx_to_cve: dict[int, str] = {}
         self._episode_reward: float = 0.0
         self._step_count: int = 0
+        self._has_reset: bool = False
 
         # ── Gymnasium Spaces ──────────────────────────────────────────
 
@@ -192,8 +195,11 @@ class PatchCascadeGymEnv(gym.Env):
             task_level = options["task_level"]
             self._task_level = task_level
 
-        effective_seed = seed if seed is not None else self._seed
+        # The constructor seed initializes a deterministic *sequence*. Reusing
+        # it on every reset made all training episodes identical.
+        effective_seed = seed if seed is not None else (self._seed if not self._has_reset else None)
         self._obs = self._env.reset(task_level=task_level, seed=effective_seed)
+        self._has_reset = True
 
         # Build hostname ↔ index mappings
         self._hostname_to_idx = {
@@ -211,6 +217,8 @@ class PatchCascadeGymEnv(gym.Env):
         self._step_count = 0
 
         obs_array = self._encode_observation(self._obs)
+        if not np.isfinite(obs_array).all():
+            raise FloatingPointError("NaN/Inf observation produced during reset")
         info = self._build_info(self._obs)
 
         return obs_array, info
@@ -247,6 +255,10 @@ class PatchCascadeGymEnv(gym.Env):
 
         # Scale reward for training stability
         scaled_reward = result.reward * self._reward_scale
+        if not np.isfinite(obs_array).all():
+            raise FloatingPointError("NaN/Inf observation produced during step")
+        if not np.isfinite(scaled_reward):
+            raise FloatingPointError("NaN/Inf reward produced during step")
         self._episode_reward += result.reward
 
         # Build info dict
@@ -257,7 +269,8 @@ class PatchCascadeGymEnv(gym.Env):
         info["action_target"] = patch_action.target
         info["action_valid"] = result.info.get("valid", True)
 
-        return obs_array, scaled_reward, result.done, result.truncated, info
+        terminated = bool(result.done and not result.truncated)
+        return obs_array, scaled_reward, terminated, bool(result.truncated), info
 
     def render(self) -> str | None:
         """Render the environment state."""
@@ -282,6 +295,7 @@ class PatchCascadeGymEnv(gym.Env):
         Layout:
             [0 .. MAX_NODES*NODE_FEATURES)         : Node features
             [.. + MAX_VULNS*VULN_FEATURES)          : Vulnerability features
+            [.. + MAX_VULNS*MAX_NODES)              : CVE-to-host incidence
             [.. + MAX_DEPS*DEP_FEATURES)            : Dependency features
             [.. + HEALTH_FEATURES)                  : Health metrics
 
@@ -332,6 +346,17 @@ class PatchCascadeGymEnv(gym.Env):
             vec[base + 4] = 1.0 if vuln.patch_available else 0.0
 
         offset += MAX_VULNS * VULN_FEATURES
+
+        # ── Encode CVE-to-host incidence ──────────────────────────────
+        # Without this matrix, many distinct states were observationally
+        # aliased and the policy could not know which patch target was valid.
+        for vuln_idx, vuln in enumerate(obs.vulnerabilities[:MAX_VULNS]):
+            for hostname in vuln.affected_hosts:
+                node_idx = self._hostname_to_idx.get(hostname)
+                if node_idx is not None and node_idx < MAX_NODES:
+                    vec[offset + vuln_idx * MAX_NODES + node_idx] = 1.0
+
+        offset += VULN_HOST_MATRIX_SIZE
 
         # ── Encode Dependencies ───────────────────────────────────────
         for i, dep in enumerate(obs.dependencies[:MAX_DEPS]):
@@ -388,7 +413,8 @@ class PatchCascadeGymEnv(gym.Env):
         Decode a MultiDiscrete action [action_type, node_idx, vuln_idx]
         into a PatchCascadeAction.
 
-        Handles out-of-range indices gracefully by falling back to NOOP.
+        Padded/out-of-range choices remain invalid so the environment applies
+        its declared invalid-action penalty. They are never silently repaired.
         """
         action_type_idx = int(action[0])
         node_idx = int(action[1])
@@ -418,28 +444,19 @@ class PatchCascadeGymEnv(gym.Env):
         # Resolve target hostname
         hostname = self._idx_to_hostname.get(node_idx, "")
         if not hostname:
-            # Invalid node index — fall back to NOOP
             return PatchCascadeAction(
-                action_type=ActionType.NOOP,
-                reason="Invalid node index, defaulting to NOOP",
+                action_type=action_type,
+                target=f"__invalid_node_{node_idx}__",
+                cve_id="CVE-0000-0000" if action_type == ActionType.APPLY_PATCH else None,
+                reason="RL agent selected padded node index",
             )
 
         # For APPLY_PATCH, resolve CVE ID
         cve_id = None
         if action_type == ActionType.APPLY_PATCH:
             cve_id = self._idx_to_cve.get(vuln_idx)
-            if cve_id is None and self._obs and self._obs.vulnerabilities:
-                # Fall back to first available CVE for this host
-                for v in self._obs.vulnerabilities:
-                    if hostname in v.affected_hosts:
-                        cve_id = v.cve_id
-                        break
             if cve_id is None:
-                # No valid CVE — NOOP
-                return PatchCascadeAction(
-                    action_type=ActionType.NOOP,
-                    reason="No valid CVE for patch, defaulting to NOOP",
-                )
+                cve_id = "CVE-0000-0000"
 
         return PatchCascadeAction(
             action_type=action_type,
@@ -466,6 +483,7 @@ class PatchCascadeGymEnv(gym.Env):
             "nodes_online": obs.health.nodes_online,
             "nodes_crashed": obs.health.nodes_crashed,
             "step_count": self._step_count,
+            "episode_seed": self._env.state.episode_seed,
         }
         if step_info:
             info.update(step_info)
@@ -479,37 +497,38 @@ class PatchCascadeGymEnv(gym.Env):
         """
         Generate an action mask for valid actions (for masked policy training).
 
-        Returns a boolean array of shape (NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS,)
-        where True = valid action. Useful for MaskablePPO from SB3-contrib.
+        Returns the exact joint validity tensor flattened in C order with shape
+        ``NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS``. MultiDiscrete factor masks
+        cannot express node/CVE pair constraints, so callers must not pass this
+        directly to SB3-contrib without a joint-action adapter.
         """
         if self._obs is None:
-            return np.ones(NUM_ACTION_TYPES, dtype=bool)
+            return np.zeros(NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS, dtype=bool)
 
-        # Simplified: mask action types that have at least one valid target
-        mask = np.zeros(NUM_ACTION_TYPES, dtype=bool)
-
-        # NOOP is always valid
-        mask[4] = True
-
-        for node in self._obs.nodes:
-            # SCAN_HOST: any node can be scanned
-            mask[0] = True
-            # SUSPEND: only ONLINE nodes
+        mask = np.zeros((NUM_ACTION_TYPES, MAX_NODES, MAX_VULNS), dtype=bool)
+        mask[4, 0, 0] = True  # one canonical NOOP; other encodings are aliases
+        for node_idx, node in enumerate(self._obs.nodes[:MAX_NODES]):
+            mask[0, node_idx, 0] = True
             if node.state == NodeState.ONLINE:
-                mask[1] = True
-            # RESUME: only SUSPENDED or CRASHED nodes
+                mask[1, node_idx, 0] = True
             if node.state in (NodeState.SUSPENDED, NodeState.CRASHED):
-                mask[3] = True
+                mask[3, node_idx, 0] = True
+            for vuln_idx, vuln in enumerate(self._obs.vulnerabilities[:MAX_VULNS]):
+                if (
+                    node.hostname in vuln.affected_hosts
+                    and node.state in (NodeState.ONLINE, NodeState.SUSPENDED)
+                    and (node.tier != CriticalityTier.CRITICAL or node.state == NodeState.SUSPENDED)
+                ):
+                    mask[2, node_idx, vuln_idx] = True
+        return mask.reshape(-1)
 
-        # APPLY_PATCH: need at least one vuln with an affected online/suspended node
-        for v in self._obs.vulnerabilities:
-            for h in v.affected_hosts:
-                node = next((n for n in self._obs.nodes if n.hostname == h), None)
-                if node and node.state in (NodeState.ONLINE, NodeState.SUSPENDED):
-                    mask[2] = True
-                    break
-
-        return mask
+    def sync_observation(self, obs: PatchCascadeObservation) -> None:
+        """Synchronize index maps for external matched-policy evaluation."""
+        self._obs = obs
+        self._hostname_to_idx = {node.hostname: idx for idx, node in enumerate(obs.nodes)}
+        self._idx_to_hostname = {idx: name for name, idx in self._hostname_to_idx.items()}
+        self._cve_to_idx = {vuln.cve_id: idx for idx, vuln in enumerate(obs.vulnerabilities)}
+        self._idx_to_cve = {idx: cve for cve, idx in self._cve_to_idx.items()}
 
     @property
     def unwrapped_env(self) -> PatchCascadeEnv:

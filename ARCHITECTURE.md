@@ -131,7 +131,11 @@ Each task uses customized weight profiles:
 ## Why These Design Choices?
 
 ### Dense Rewards Over Sparse
-Sparse rewards (win/lose at episode end) make credit assignment extremely difficult. Our potential-based shaping provides feedback every turn while maintaining the same optimal policy.
+Sparse rewards (win/lose at episode end) make credit assignment extremely difficult.
+Canonical-v1 uses `R' = R_base + γΦ(s') - Φ(s)`, the same `γ=0.99` as PPO,
+`Φ=-total_penalty`, and zero potential at true terminals. This satisfies the
+standard policy-invariance conditions for the defined base reward. The older
+undiscounted implementation did not support that claim and is non-canonical.
 
 ### Multi-Dimensional Grading Over Single Metric
 A single normalized reward doesn't capture *how* an agent succeeded. An agent that causes 10 cascades but recovers is fundamentally different from one that avoids cascades entirely. Our 4-dimension system distinguishes these cases.

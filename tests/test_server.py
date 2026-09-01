@@ -47,8 +47,8 @@ class TestBasicEndpoints:
     """Test basic health and info endpoints."""
 
     def test_root(self, client):
-        """Root endpoint should return API info."""
-        response = client.get("/")
+        """The dedicated API endpoint should return JSON even when / serves the dashboard."""
+        response = client.get("/api")
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "PatchCascade SOC"
