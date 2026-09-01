@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "campaign_id": "patchcascade-validation-selection-v1",
+  "status": "preregistered-no-results-compute-not-authorized",
+  "data_policy": {
+    "allowed_splits": ["training", "validation"],
+    "forbidden_splits": ["canonical_test", "confirmation_test"],
+    "validation_seeds": [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009, 10010],
+    "training_seeds": [42, 1042, 2042]
+  },
+  "bounded_search": {
+    "maximum_candidates": 8,
+    "candidates": [
+      {"id": "c01", "learning_rate": 0.0001, "entropy_coefficient": 0.005, "network": [128, 128]},
+      {"id": "c02", "learning_rate": 0.0001, "entropy_coefficient": 0.01, "network": [128, 128]},
+      {"id": "c03", "learning_rate": 0.0003, "entropy_coefficient": 0.005, "network": [128, 128]},
+      {"id": "c04", "learning_rate": 0.0003, "entropy_coefficient": 0.01, "network": [128, 128]},
+      {"id": "c05", "learning_rate": 0.0001, "entropy_coefficient": 0.005, "network": [256, 256]},
+      {"id": "c06", "learning_rate": 0.0001, "entropy_coefficient": 0.01, "network": [256, 256]},
+      {"id": "c07", "learning_rate": 0.0003, "entropy_coefficient": 0.005, "network": [256, 256]},
+      {"id": "c08", "learning_rate": 0.0003, "entropy_coefficient": 0.01, "network": [256, 256]}
+    ],
+    "fixed": {
+      "algorithm": "PPO",
+      "action_interface": "multidiscrete-v2-joint-validity-penalized",
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "clip_range": 0.2,
+      "batch_size": 64,
+      "epochs_per_update": 10,
+      "schedule": "progressive-curriculum-plus-balanced-mixed"
+    }
+  },
+  "successive_halving": [
+    {"round": 1, "candidate_count": 8, "training_seeds": [42], "timesteps_per_stage": 10240, "advance": 3},
+    {"round": 2, "candidate_count": 3, "training_seeds": [42, 1042, 2042], "timesteps_per_stage": 20480, "advance": 2},
+    {"round": 3, "candidate_count": 2, "training_seeds": [42, 1042, 2042], "timesteps_per_stage": 40960, "advance": 1}
+  ],
+  "selection_rule": {
+    "safety_eligibility": ["zero_catastrophic_failures", "zero_cascade_failures"],
+    "ranking": [
+      "highest_worst_task_paired_bootstrap_lower_bound_vs_heuristic",
+      "highest_worst_task_success_rate",
+      "highest_macro_validation_score",
+      "lower_total_timesteps",
+      "smaller_network",
+      "lexicographically_lower_candidate_id"
+    ],
+    "single_final_decision": true,
+    "no_manual_override_after_results": true
+  },
+  "action_interface_investigation": {
+    "status": "required-before-final-freeze",
+    "development_only_engineering": true,
+    "validation_only_comparison": true,
+    "interfaces": [
+      {"id": "multidiscrete-ppo", "status": "implemented-baseline"},
+      {"id": "flattened-discrete-maskableppo", "status": "requires-implementation-and-contract-tests"}
+    ],
+    "hierarchical_policy": "consider-only-if-both-predeclared-interfaces-fail-safety-or-feasibility",
+    "decision_rule": "Choose the simplest interface whose validation safety gates pass; if both pass, require a positive paired-bootstrap lower bound in sample efficiency before selecting the more complex interface."
+  },
+  "freeze_policy": {
+    "selected_configuration_requires_new_versioned_spec": true,
+    "selected_spec_required_status": "frozen-final-selected",
+    "selected_spec_must_be_committed_before_held_out_evaluation": true,
+    "canonical_and_confirmation_results_must_not_exist_when_freezing": true
+  }
+}

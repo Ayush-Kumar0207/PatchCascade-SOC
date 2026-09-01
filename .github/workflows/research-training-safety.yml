@@ -22,18 +22,19 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install CPU dependencies
+      - name: Install exact canonical dependency lock
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-          python -m pip install matplotlib tqdm
+          python -m pip install -r requirements-training.txt
+          python -m pip install -e . --no-deps
+          python -m pip check
       - name: Static validation
         run: |
           python -m json.tool training_specs/canonical_v1.json > /dev/null
+          python -m json.tool training_specs/model_selection_v1.json > /dev/null
           python -m compileall -q . -x '/(\.git|\.venv|static)/'
-      - name: Tests and smoke test
-        run: |
-          python -m pytest -q
-          python smoke_test.py
-      - name: Security/spec preflight without optimizer or dependency lock
-        run: python tools/training_preflight.py --spec training_specs/canonical_v1.json --skip-tests --allow-unlocked-dependencies
+          python tools/validate_model_selection.py
+      - name: Exact-lock tests, environment checks, and PPO update probe
+        run: python tools/training_preflight.py --spec training_specs/canonical_v1.json
+      - name: New-process safe-resume equivalence probe
+        run: python tools/resume_equivalence_probe.py

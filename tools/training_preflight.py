@@ -60,7 +60,21 @@ def environment_checks(spec: dict) -> None:
     import numpy as np
     from gymnasium.utils.env_checker import check_env
     from benchmark import HeuristicAgent, RandomAgent, evaluate_agent
-    from gym_wrapper import PatchCascadeGymEnv
+    from gym_wrapper import (
+        ACTION_SCHEMA_VERSION, ENVIRONMENT_API_VERSION,
+        OBSERVATION_SCHEMA_VERSION, PatchCascadeGymEnv,
+    )
+
+    expected_versions = {
+        "api_version": ENVIRONMENT_API_VERSION,
+        "schema_version": OBSERVATION_SCHEMA_VERSION,
+        "action_schema_version": ACTION_SCHEMA_VERSION,
+    }
+    actual_versions = {key: spec["environment"].get(key) for key in expected_versions}
+    if actual_versions != expected_versions:
+        raise ReproducibilityError(
+            f"environment/API version mismatch: expected={expected_versions} actual={actual_versions}"
+        )
 
     for level in spec["environment"]["task_levels"]:
         env = PatchCascadeGymEnv(task_level=level, seed=123)

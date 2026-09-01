@@ -3,6 +3,13 @@
 The safe workflow is intentionally easy to execute correctly: values come from
 the repository spec, while errors stop before GPU time is spent.
 
+> **Current review state:** expensive contributor training is not authorized.
+> `canonical_v1.json` is a provisional corrected baseline, not the highest-quality
+> final experiment. Complete the bounded validation-only protocol in
+> [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md), then commit the
+> selected configuration as a new `frozen-final-selected` spec before opening
+> canonical or confirmation seeds.
+
 ## Before compute
 
 1. Comment on [issue #2](https://github.com/Ayush-Kumar0207/PatchCascade-SOC/issues/2)
@@ -15,8 +22,9 @@ the repository spec, while errors stop before GPU time is spent.
    a CUDA-specific index; the resolved versions must still match):
 
    ```bash
-   python -m pip install -e .
    python -m pip install -r requirements-training.txt
+   python -m pip install -e . --no-deps
+   python -m pip check
    ```
 
    Never put a token in a notebook, config, log, or PR.
@@ -38,20 +46,24 @@ python train_canonical.py \
 
 The command reruns preflight (including a CPU exact-shape PPO update), persists
 the preflight evidence, creates the immutable identity/provenance, trains
-all frozen stages, records SB3 diagnostics, checkpoints every 5,000 timesteps,
-resumes compatible interruptions, rejects foreign checkpoints, and runs only the
-validation split. Rerun the identical command after a disconnect. Never edit a
+all frozen stages, records SB3 diagnostics, checkpoints at the first completed
+PPO update boundary after each 5,000 timesteps, resumes compatible interruptions,
+rejects foreign checkpoints, and runs only the validation split. A checkpoint
+includes hashed Python/NumPy/Torch/CUDA/vector-worker/environment/MixedTask state
+that normal SB3 saves omit. Rerun the identical command after a disconnect. Never edit a
 run lock or point a new experiment at the old directory.
 
 ## Frozen evaluation and verification
 
-After the configuration/model is frozen, run the held-out canonical and
-confirmation evaluations with one command:
+Only after validation selection is complete and a **new** spec with status
+`frozen-final-selected` is reviewed and committed may its held-out canonical and
+confirmation evaluations run with one command:
 The wrapper reads the model path and fingerprint from the locked run, so nothing
 training-critical is entered manually:
 
 ```bash
-python tools/run_evaluation.py /persistent/path/patchcascade-canonical-v1 --split all
+python tools/run_evaluation.py /persistent/path/patchcascade-final-selected --split all \
+  --spec training_specs/<selected-spec>.json
 ```
 
 Do not tune after either held-out result. Seeds, episode counts, output paths, max
@@ -60,6 +72,9 @@ the immutable run and spec. Evaluation is written to an in-progress directory an
 published atomically only after verification. An interrupted directory is retained
 under `evaluation_quarantine/`, disclosed in the event log, and the entire
 deterministic split is safely rerun; partial evidence can never look complete.
+
+Running that command with `canonical_v1.json` stops immediately because the
+provisional spec deliberately seals held-out seeds.
 
 Then run:
 

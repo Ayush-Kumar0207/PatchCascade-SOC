@@ -5,13 +5,22 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from environment import INVALID_ACTION_PENALTY, TIME_PRESSURE_PENALTY
-from gym_wrapper import MAX_NODES, NODE_FEATURES, PatchCascadeGymEnv, VULN_FEATURES
+from gym_wrapper import (
+    ACTION_SCHEMA_VERSION,
+    ENVIRONMENT_API_VERSION,
+    MAX_NODES,
+    NODE_FEATURES,
+    OBSERVATION_SCHEMA_VERSION,
+    PatchCascadeGymEnv,
+    VULN_FEATURES,
+)
 from training_repro import (
     ReproducibilityError,
     build_lock,
@@ -25,10 +34,91 @@ from training_repro import (
     validate_resume,
 )
 from tools.verify_training_artifacts import verify_run
+from tools.run_evaluation import run_evaluation
+from tools.validate_model_selection import validate as validate_model_selection
+from train_canonical import (
+    load_resumable_checkpoint,
+    make_vec_env,
+    model_from_spec,
+    save_resumable_checkpoint,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = ROOT / "training_specs" / "canonical_v1.json"
+
+
+def test_safe_boundary_resume_restores_equivalent_cpu_parameters(tmp_path):
+    import torch
+
+    spec, _ = load_spec(SPEC_PATH)
+    probe = copy.deepcopy(spec)
+    probe["algorithm"].update({
+        "rollout_steps": 8,
+        "batch_size": 8,
+        "epochs_per_update": 1,
+        "parallel_environments": 1,
+        "device": "cpu",
+        "architecture": {"policy": [16], "value": [16]},
+    })
+    stage = {"task": "easy", "timesteps": 16}
+    env = make_vec_env(probe, stage, 0)
+    model = model_from_spec(probe, env)
+    model.learn(total_timesteps=8, progress_bar=False)
+    checkpoint = tmp_path / "checkpoint_8.zip"
+    model_identity, runtime_identity = save_resumable_checkpoint(model, checkpoint, tmp_path)
+    metadata = {
+        "total_timesteps": 8,
+        "model_identity": model_identity,
+        "runtime_state_identity": runtime_identity,
+        "safe_boundary": "after-complete-rollout-and-optimizer-update",
+    }
+
+    model.learn(total_timesteps=8, reset_num_timesteps=False, progress_bar=False)
+    uninterrupted = {
+        key: value.detach().cpu().clone() for key, value in model.policy.state_dict().items()
+    }
+    model.get_env().close()
+
+    resumed = load_resumable_checkpoint(checkpoint, metadata, tmp_path, "cpu")
+    resumed.learn(total_timesteps=8, reset_num_timesteps=False, progress_bar=False)
+    resumed_state = resumed.policy.state_dict()
+    assert resumed.num_timesteps == model.num_timesteps == 16
+    assert uninterrupted.keys() == resumed_state.keys()
+    assert all(torch.equal(uninterrupted[key], resumed_state[key].detach().cpu()) for key in uninterrupted)
+    resumed.get_env().close()
+
+
+def test_provisional_spec_seals_held_out_splits(tmp_path):
+    with pytest.raises(ReproducibilityError, match="held-out evaluation is sealed"):
+        run_evaluation(tmp_path, "canonical", SPEC_PATH)
+    report = validate_model_selection()
+    assert report["passed"] is True
+
+
+def test_environment_compatibility_versions_match_frozen_spec():
+    spec, _ = load_spec(SPEC_PATH)
+    assert spec["environment"]["api_version"] == ENVIRONMENT_API_VERSION
+    assert spec["environment"]["schema_version"] == OBSERVATION_SCHEMA_VERSION
+    assert spec["environment"]["action_schema_version"] == ACTION_SCHEMA_VERSION
+    assert PatchCascadeGymEnv.metadata["environment_api_version"] == ENVIRONMENT_API_VERSION
+
+
+def test_canonical_dependency_lock_is_exact_and_matches_spec():
+    spec, _ = load_spec(SPEC_PATH)
+    exact = re.compile(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?==([^\s;]+)$")
+    locked = {}
+    for raw in (ROOT / "requirements-training.txt").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = exact.fullmatch(line)
+        assert match is not None, f"non-exact canonical requirement: {line}"
+        locked[match.group(1).lower().replace("_", "-")] = match.group(2)
+    assert locked == {
+        name.lower().replace("_", "-"): version
+        for name, version in spec["dependencies"].items()
+    }
 
 
 def test_explicit_reset_is_reproducible_but_constructor_seed_is_a_sequence():
@@ -303,6 +393,50 @@ def test_artifact_verifier_accepts_complete_identity_matched_fixture(tmp_path):
     assert result["scientific_outcome"] == "rejected_policy_evidence"
     assert (root / "artifact_manifest.json").is_file()
     assert (root / "SHA256SUMS.txt").is_file()
+
+
+def test_artifact_verifier_accepts_audited_checkpoint_retention_pruning(tmp_path):
+    root, spec, lock = _artifact_fixture(tmp_path)
+    events = root / spec["outputs"]["events"]
+    saved = {
+        "event": "checkpoint_saved", "stage": "easy",
+        "run_fingerprint": lock["run_fingerprint"], "source_commit": lock["source_commit"],
+        "checkpoint": "checkpoints/checkpoint_2048.zip", "checkpoint_sha256": "a" * 64,
+        "runtime_state": "checkpoints/checkpoint_2048.runtime.pkl",
+        "runtime_state_sha256": "b" * 64,
+        "safe_boundary": "after-complete-rollout-and-optimizer-update",
+        "total_timesteps": 2048,
+    }
+    pruned = {
+        "event": "checkpoint_pruned", "stage": "easy",
+        "run_fingerprint": lock["run_fingerprint"], "source_commit": lock["source_commit"],
+        "checkpoint": saved["checkpoint"], "checkpoint_sha256": saved["checkpoint_sha256"],
+        "runtime_state": saved["runtime_state"],
+        "runtime_state_sha256": saved["runtime_state_sha256"],
+        "reason": "configured-retention-limit",
+    }
+    with events.open("a", encoding="utf-8") as handle:
+        handle.write(canonical_json(saved) + "\n")
+        handle.write(canonical_json(pruned) + "\n")
+    result = verify_run(root, SPEC_PATH, load_model=False, enforce_source=False, enforce_runtime=False)
+    assert result["valid"] is True
+
+
+def test_artifact_verifier_rejects_unexplained_missing_checkpoint(tmp_path):
+    root, spec, lock = _artifact_fixture(tmp_path)
+    events = root / spec["outputs"]["events"]
+    with events.open("a", encoding="utf-8") as handle:
+        handle.write(canonical_json({
+            "event": "checkpoint_saved", "stage": "easy",
+            "run_fingerprint": lock["run_fingerprint"], "source_commit": lock["source_commit"],
+            "checkpoint": "checkpoints/missing.zip", "checkpoint_sha256": "a" * 64,
+            "runtime_state": "checkpoints/missing.runtime.pkl",
+            "runtime_state_sha256": "b" * 64,
+            "safe_boundary": "after-complete-rollout-and-optimizer-update",
+            "total_timesteps": 2048,
+        }) + "\n")
+    with pytest.raises(ReproducibilityError, match="triplet is incomplete"):
+        verify_run(root, SPEC_PATH, load_model=False, enforce_source=False, enforce_runtime=False)
 
 
 def test_artifact_verifier_rejects_partial_evaluation(tmp_path):

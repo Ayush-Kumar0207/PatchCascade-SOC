@@ -54,6 +54,12 @@ MAX_NODES = 15       # Hard mode has up to 15 nodes
 MAX_VULNS = 8        # Zero-day can inject up to ~6 CVEs
 MAX_DEPS = 20        # Complex graphs can have many edges
 
+# Material observation/action/termination changes are an explicit compatibility
+# boundary. Old PPO archives must never be loaded as canonical-v1 models.
+ENVIRONMENT_API_VERSION = "patchcascade-gym-v4"
+OBSERVATION_SCHEMA_VERSION = "gym-observation-v3-cve-host-incidence"
+ACTION_SCHEMA_VERSION = "multidiscrete-v2-joint-validity-penalized"
+
 # Feature sizes per element
 NODE_FEATURES = 6    # tier, state, patch_turns, has_vuln, is_exploited, is_critical_tier
 VULN_FEATURES = 5    # cvss, severity_code, num_affected, exploit_in_wild, patch_available
@@ -122,7 +128,12 @@ class PatchCascadeGymEnv(gym.Env):
                       (action_type, target_node, target_vuln).
     """
 
-    metadata = {"render_modes": ["human", "ansi"]}
+    metadata = {
+        "render_modes": ["human", "ansi"],
+        "environment_api_version": ENVIRONMENT_API_VERSION,
+        "observation_schema_version": OBSERVATION_SCHEMA_VERSION,
+        "action_schema_version": ACTION_SCHEMA_VERSION,
+    }
 
     def __init__(
         self,

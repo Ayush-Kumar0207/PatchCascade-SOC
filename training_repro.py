@@ -66,6 +66,21 @@ def load_spec(path: str | Path) -> tuple[dict[str, Any], Path]:
         raise ReproducibilityError(f"Invalid or unsupported canonical specification: {resolved}")
     if spec["algorithm"]["gamma"] != 0.99:
         raise ReproducibilityError("Canonical gamma must match environment SHAPING_GAMMA=0.99")
+    expected_environment_versions = {
+        "api_version": "patchcascade-gym-v4",
+        "schema_version": "gym-observation-v3-cve-host-incidence",
+        "action_schema_version": "multidiscrete-v2-joint-validity-penalized",
+        "reward_schema_version": "pbrs-v2-gamma-0.99-terminal-zero",
+    }
+    drift = {
+        key: {"expected": value, "actual": spec["environment"].get(key)}
+        for key, value in expected_environment_versions.items()
+        if spec["environment"].get(key) != value
+    }
+    if drift:
+        raise ReproducibilityError(
+            "Canonical environment/API compatibility version mismatch: " + canonical_json(drift)
+        )
     task_levels = spec["environment"]["task_levels"]
     if len(task_levels) != len(set(task_levels)) or not task_levels:
         raise ReproducibilityError("Canonical task levels must be non-empty and unique")

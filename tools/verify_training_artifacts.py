@@ -328,7 +328,7 @@ def verify_run(
     names = [event.get("event") for event in events]
     allowed_events = {
         "run_created", "preflight_passed", "training_resumed", "stage_started",
-        "checkpoint_saved", "warning", "stage_completed", "final_model_created",
+            "checkpoint_saved", "checkpoint_pruned", "warning", "stage_completed", "final_model_created",
         "evaluation_started", "evaluation_failed", "evaluation_interrupted_quarantined",
         "evaluation_completed",
     }
@@ -351,6 +351,57 @@ def verify_run(
             or recorded_report.get("dependency_mismatches")
         ):
             raise ReproducibilityError("a recorded resume preflight is failed or incompatible")
+    checkpoint_artifacts: list[Path] = []
+    saved_checkpoints = {
+        str(event.get("checkpoint")): (index, event)
+        for index, event in enumerate(events)
+        if event.get("event") == "checkpoint_saved"
+    }
+    pruned_checkpoints: dict[str, tuple[int, dict]] = {}
+    for index, event in enumerate(events):
+        if event.get("event") != "checkpoint_pruned":
+            continue
+        checkpoint = str(event.get("checkpoint", ""))
+        saved = saved_checkpoints.get(checkpoint)
+        if saved is None or checkpoint in pruned_checkpoints or index <= saved[0]:
+            raise ReproducibilityError("checkpoint pruning lifecycle is inconsistent")
+        saved_event = saved[1]
+        if (
+            event.get("reason") != "configured-retention-limit"
+            or event.get("checkpoint_sha256") != saved_event.get("checkpoint_sha256")
+            or event.get("runtime_state") != saved_event.get("runtime_state")
+            or event.get("runtime_state_sha256") != saved_event.get("runtime_state_sha256")
+        ):
+            raise ReproducibilityError("checkpoint pruning event does not match the saved checkpoint")
+        pruned_checkpoints[checkpoint] = (index, event)
+    for event in (row for row in events if row.get("event") == "checkpoint_saved"):
+        if event.get("safe_boundary") != "after-complete-rollout-and-optimizer-update":
+            raise ReproducibilityError("checkpoint lifecycle event is not a safe PPO update boundary")
+        if str(event.get("checkpoint")) in pruned_checkpoints:
+            continue
+        checkpoint_path = resolve_run_path(root, str(event.get("checkpoint", "")))
+        runtime_path = resolve_run_path(root, str(event.get("runtime_state", "")))
+        metadata_path = checkpoint_path.with_suffix(".metadata.json")
+        if not checkpoint_path.is_file() or not runtime_path.is_file() or not metadata_path.is_file():
+            raise ReproducibilityError("checkpoint model/runtime/metadata triplet is incomplete")
+        if sha256_file(checkpoint_path) != event.get("checkpoint_sha256"):
+            raise ReproducibilityError("checkpoint lifecycle event does not match model bytes")
+        if sha256_file(runtime_path) != event.get("runtime_state_sha256"):
+            raise ReproducibilityError("checkpoint lifecycle event does not match runtime-state bytes")
+        checkpoint_metadata = read_json(metadata_path)
+        validate_resume(checkpoint_metadata, lock)
+        if (
+            checkpoint_metadata.get("safe_boundary") != event.get("safe_boundary")
+            or checkpoint_metadata.get("total_timesteps") != event.get("total_timesteps")
+        ):
+            raise ReproducibilityError("checkpoint metadata/lifecycle boundary mismatch")
+        validate_file_identity(
+            checkpoint_path, checkpoint_metadata.get("model_identity", {}), relative_to=root
+        )
+        validate_file_identity(
+            runtime_path, checkpoint_metadata.get("runtime_state_identity", {}), relative_to=root
+        )
+        checkpoint_artifacts.extend([checkpoint_path, runtime_path, metadata_path])
     final_event = next(event for event in events if event.get("event") == "final_model_created")
     if final_event.get("model_sha256") != model_identity["sha256"]:
         raise ReproducibilityError("final-model lifecycle event does not match frozen bytes")
@@ -435,6 +486,7 @@ def verify_run(
         root / outputs["progress"], model_path, root / outputs["final_model_metadata"],
         root / "training_diagnostics.jsonl",
         root / outputs["training_plots_dir"] / "diagnostics.png",
+        *checkpoint_artifacts,
     ]
     if require_evaluations:
         for key in ("validation_dir", "canonical_dir", "confirmation_dir"):

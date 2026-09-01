@@ -41,6 +41,11 @@ def run_evaluation(run_dir: str | Path, split: str, spec_path: str | Path = "tra
     if split not in {"validation", "canonical", "confirmation"}:
         raise ReproducibilityError(f"unsupported evaluation split: {split}")
     spec, resolved_spec = load_spec(spec_path)
+    if split in {"canonical", "confirmation"} and spec.get("status") != "frozen-final-selected":
+        raise ReproducibilityError(
+            "held-out evaluation is sealed: this is a provisional baseline, not a "
+            "validation-selected frozen-final specification"
+        )
     root = ensure_external_run_dir(run_dir, float(spec["runtime"]["minimum_free_disk_gib"]))
     git = git_metadata()
     if git["dirty"]:

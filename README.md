@@ -613,8 +613,12 @@ Scores are composite (Completion × Efficiency × Safety × Strategy), normalize
 | **LLM Agent** | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
 
 > **Note:** `train_rl.py` is retained for historical/interactive experiments.
-> Research-grade runs use [`training_specs/canonical_v1.json`](training_specs/canonical_v1.json)
-> and [`train_canonical.py`](train_canonical.py).
+> [`training_specs/canonical_v1.json`](training_specs/canonical_v1.json) is a
+> corrected provisional baseline, not the final highest-quality experiment.
+> Held-out seeds remain sealed until the bounded validation-only process in
+> [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) produces a new,
+> reviewed `frozen-final-selected` spec. Expensive contributor training is not
+> currently authorized.
 
 ### 🏋️ Train Your Own Agent
 
@@ -630,7 +634,7 @@ model = PPO("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=50_000)
 ```
 
-For the contributor-safe sequence—preflight, automatic resume, matched held-out
+For the contributor-safe sequence—exact-lock preflight, safe-boundary automatic resume, matched held-out
 evaluation, verification, and submission bundle—follow
 [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md). Contributors
 do not edit seeds or hyperparameters; the version-controlled spec supplies them.

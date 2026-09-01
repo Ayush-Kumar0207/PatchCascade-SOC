@@ -4,6 +4,12 @@ The canonical-v1 protocol is a **progressive five-task curriculum followed by a
 balanced mixed-task consolidation stage**. It is a frozen, defensible baseline,
 not a claim that these hyperparameters or this method are optimal.
 
+It is not the final contributor-training protocol. The bounded, validation-only
+selection and action-interface investigation in
+[`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) must complete, and
+the winner must be committed as a new `frozen-final-selected` spec, before either
+canonical or confirmation evaluation is unsealed.
+
 ## Options considered
 
 1. **Separate PPO per level** avoids catastrophic forgetting but produces five
@@ -40,6 +46,17 @@ must be compared on validation seeds before any canonical test is opened.
 These changes invalidate old unaccepted PPO archives as canonical-v1 models. They
 do not alter or delete historical artifacts.
 
+The compatibility boundary is explicit: environment API `patchcascade-gym-v4`,
+observation `gym-observation-v3-cve-host-incidence`, action
+`multidiscrete-v2-joint-validity-penalized`, and reward
+`pbrs-v2-gamma-0.99-terminal-zero`. All four values enter the run fingerprint;
+older PPO archives are pre-canonical and incompatible.
+
+Ordinary MultiDiscrete PPO remains a provisional baseline because node/CVE
+validity is joint. Independent factor masks cannot express that relation. A
+flattened Discrete plus state-dependent MaskablePPO interface is therefore a
+predeclared validation-only ablation, not an unreviewed change in this PR.
+
 ## Evidence contract
 
 Methodological correctness comes before scale. Canonical-v1 therefore rejects a
@@ -58,3 +75,11 @@ bound versus Random and Heuristic, zero PPO catastrophic failures, zero cascade
 failures, and zero invalid actions. Any failure is retained as canonical negative
 evidence and explicitly labeled rejected. More timesteps, epochs, or hardware do
 not repair a failed evidence contract.
+
+Checkpoints are written only after a complete rollout and PPO optimizer update.
+Each model checkpoint is paired with a hashed runtime snapshot containing Python,
+NumPy, Torch CPU/CUDA, vector-environment, worker, MixedTask task-selection,
+current observation, and episode-start state. CI compares uninterrupted CPU PPO
+against save → new process/load → continue and requires identical trajectory and
+parameter hashes. Mid-rollout work after the latest safe boundary is intentionally
+discarded after an interruption; it is never labelled durable progress.
