@@ -227,6 +227,10 @@ class PatchCascadeEnv:
                 f"Must be one of: easy, medium, hard, incident_response, zero_day."
             )
         
+        # A reset starts a new episode.  Clear the prior state before deriving
+        # health so cumulative risk/downtime cannot leak across seeded resets.
+        self._state = None
+
         # Calculate initial health metrics
         health = self._calculate_health_metrics(nodes, vulnerabilities, turn_number=0)
         

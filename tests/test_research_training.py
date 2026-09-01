@@ -134,6 +134,18 @@ def test_explicit_reset_is_reproducible_but_constructor_seed_is_a_sequence():
     assert np.array_equal(obs_a, obs_b)
 
 
+def test_same_seed_and_action_have_identical_step_transition_after_prior_episode():
+    env = PatchCascadeGymEnv(task_level="medium")
+    env.action_space.seed(123)
+    action = env.action_space.sample()
+    env.reset(seed=123)
+    first = env.step(action)
+    env.reset(seed=123)
+    second = env.step(action)
+    assert np.array_equal(first[0], second[0])
+    assert first[1:] == second[1:]
+
+
 def test_observation_contains_cve_to_host_incidence():
     env = PatchCascadeGymEnv(task_level="easy", seed=9)
     vector, _ = env.reset(seed=9)
