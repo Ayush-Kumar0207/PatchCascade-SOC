@@ -1,11 +1,18 @@
-name: research-training-safety
+name: Research training safety
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: research-training-safety-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cpu-validation:
+    name: Required safety checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
