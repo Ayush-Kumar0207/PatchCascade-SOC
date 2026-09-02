@@ -297,12 +297,24 @@ def verify_run(
         raise ReproducibilityError("final model timestep count does not match the frozen methodology")
     model_identity = model_metadata.get("model_identity", {})
     validate_file_identity(model_path, model_identity, relative_to=root)
+    expected_algorithm_class = {
+        "PPO": "BoundaryCheckpointPPO",
+        "MaskablePPO": "BoundaryCheckpointMaskablePPO",
+    }.get(spec["algorithm"]["name"])
+    if model_metadata.get("algorithm_class") != expected_algorithm_class:
+        raise ReproducibilityError("final model algorithm class does not match the frozen specification")
     if load_model:
         try:
+            from sb3_contrib import MaskablePPO
             from stable_baselines3 import PPO
-            from gym_wrapper import PatchCascadeGymEnv
-            model = PPO.load(model_path)
-            env = PatchCascadeGymEnv()
+            from gym_wrapper import (
+                FLATTENED_ACTION_SCHEMA_VERSION,
+                FlattenedMaskedPatchCascadeEnv,
+                PatchCascadeGymEnv,
+            )
+            masked = spec["environment"]["action_schema_version"] == FLATTENED_ACTION_SCHEMA_VERSION
+            model = (MaskablePPO if masked else PPO).load(model_path)
+            env = (FlattenedMaskedPatchCascadeEnv if masked else PatchCascadeGymEnv)()
             if model.observation_space != env.observation_space or model.action_space != env.action_space:
                 raise ReproducibilityError("model observation/action spaces do not match the environment")
         except ReproducibilityError:
@@ -371,12 +383,18 @@ def verify_run(
             or event.get("checkpoint_sha256") != saved_event.get("checkpoint_sha256")
             or event.get("runtime_state") != saved_event.get("runtime_state")
             or event.get("runtime_state_sha256") != saved_event.get("runtime_state_sha256")
+            or event.get("runtime_state_format") != saved_event.get("runtime_state_format")
+            or event.get("algorithm_class") != saved_event.get("algorithm_class")
         ):
             raise ReproducibilityError("checkpoint pruning event does not match the saved checkpoint")
         pruned_checkpoints[checkpoint] = (index, event)
     for event in (row for row in events if row.get("event") == "checkpoint_saved"):
         if event.get("safe_boundary") != "after-complete-rollout-and-optimizer-update":
             raise ReproducibilityError("checkpoint lifecycle event is not a safe PPO update boundary")
+        if event.get("runtime_state_format") != "python-cloudpickle-trusted-run-only-v1":
+            raise ReproducibilityError("checkpoint lifecycle event has an unknown runtime-state format")
+        if event.get("algorithm_class") != expected_algorithm_class:
+            raise ReproducibilityError("checkpoint lifecycle event has the wrong algorithm class")
         if str(event.get("checkpoint")) in pruned_checkpoints:
             continue
         checkpoint_path = resolve_run_path(root, str(event.get("checkpoint", "")))
@@ -393,6 +411,8 @@ def verify_run(
         if (
             checkpoint_metadata.get("safe_boundary") != event.get("safe_boundary")
             or checkpoint_metadata.get("total_timesteps") != event.get("total_timesteps")
+            or checkpoint_metadata.get("runtime_state_format") != event.get("runtime_state_format")
+            or checkpoint_metadata.get("algorithm_class") != event.get("algorithm_class")
         ):
             raise ReproducibilityError("checkpoint metadata/lifecycle boundary mismatch")
         validate_file_identity(
@@ -401,6 +421,8 @@ def verify_run(
         validate_file_identity(
             runtime_path, checkpoint_metadata.get("runtime_state_identity", {}), relative_to=root
         )
+        # Runtime state is executable cloudpickle. Verification intentionally
+        # hashes its opaque bytes and validates metadata without deserializing it.
         checkpoint_artifacts.extend([checkpoint_path, runtime_path, metadata_path])
     final_event = next(event for event in events if event.get("event") == "final_model_created")
     if final_event.get("model_sha256") != model_identity["sha256"]:

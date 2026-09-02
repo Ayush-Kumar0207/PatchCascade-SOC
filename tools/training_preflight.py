@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import subprocess
@@ -16,7 +17,7 @@ if str(ROOT) not in sys.path:
 
 from training_repro import (
     ReproducibilityError, declared_dependency_mismatches, git_metadata, load_spec,
-    run_fingerprint, runtime_info, spec_hash,
+    run_fingerprint, runtime_info, spec_hash, spec_reference,
 )
 
 PATTERNS = {
@@ -62,13 +63,14 @@ def environment_checks(spec: dict) -> None:
     from benchmark import HeuristicAgent, RandomAgent, evaluate_agent
     from gym_wrapper import (
         ACTION_SCHEMA_VERSION, ENVIRONMENT_API_VERSION,
-        OBSERVATION_SCHEMA_VERSION, PatchCascadeGymEnv,
+        FLATTENED_ACTION_SCHEMA_VERSION, OBSERVATION_SCHEMA_VERSION,
+        FlattenedMaskedPatchCascadeEnv, PatchCascadeGymEnv,
     )
 
     expected_versions = {
         "api_version": ENVIRONMENT_API_VERSION,
         "schema_version": OBSERVATION_SCHEMA_VERSION,
-        "action_schema_version": ACTION_SCHEMA_VERSION,
+        "action_schema_version": spec["environment"]["action_schema_version"],
     }
     actual_versions = {key: spec["environment"].get(key) for key in expected_versions}
     if actual_versions != expected_versions:
@@ -76,8 +78,12 @@ def environment_checks(spec: dict) -> None:
             f"environment/API version mismatch: expected={expected_versions} actual={actual_versions}"
         )
 
+    action_schema = spec["environment"]["action_schema_version"]
+    if action_schema not in {ACTION_SCHEMA_VERSION, FLATTENED_ACTION_SCHEMA_VERSION}:
+        raise ReproducibilityError(f"unsupported action schema: {action_schema}")
+    env_class = FlattenedMaskedPatchCascadeEnv if action_schema == FLATTENED_ACTION_SCHEMA_VERSION else PatchCascadeGymEnv
     for level in spec["environment"]["task_levels"]:
-        env = PatchCascadeGymEnv(task_level=level, seed=123)
+        env = env_class(task_level=level, seed=123)
         check_env(env, skip_render_check=True)
         first, _ = env.reset(seed=123)
         second, _ = env.reset(seed=123)
@@ -100,28 +106,15 @@ def environment_checks(spec: dict) -> None:
 def optimizer_shape_probe(spec: dict) -> dict:
     """Exercise one exact-size PPO rollout/update on CPU before costly training."""
     import torch
-    from stable_baselines3 import PPO
-    from stable_baselines3.common.monitor import Monitor
-    from stable_baselines3.common.vec_env import DummyVecEnv
-    from gym_wrapper import PatchCascadeGymEnv
+    from train_canonical import make_vec_env, model_from_spec
 
     cfg = spec["algorithm"]
     count = int(cfg["parallel_environments"])
-    seed = int(spec["seeds"]["global_training_seed"])
-    env = DummyVecEnv([
-        (lambda rank=rank: Monitor(PatchCascadeGymEnv(task_level="easy", seed=seed + rank)))
-        for rank in range(count)
-    ])
+    probe_spec = copy.deepcopy(spec)
+    probe_spec["algorithm"]["device"] = "cpu"
+    env = make_vec_env(probe_spec, {"task": "easy", "timesteps": int(cfg["rollout_steps"]) * count}, 0)
     try:
-        model = PPO(
-            cfg["policy"], env, seed=seed, learning_rate=cfg["learning_rate"],
-            gamma=cfg["gamma"], gae_lambda=cfg["gae_lambda"], clip_range=cfg["clip_range"],
-            ent_coef=cfg["entropy_coefficient"], vf_coef=cfg["value_coefficient"],
-            max_grad_norm=cfg["max_grad_norm"], n_steps=cfg["rollout_steps"],
-            batch_size=cfg["batch_size"], n_epochs=cfg["epochs_per_update"], device="cpu",
-            policy_kwargs={"net_arch": {"pi": cfg["architecture"]["policy"], "vf": cfg["architecture"]["value"]}},
-            verbose=0,
-        )
+        model = model_from_spec(probe_spec, env)
         before = [parameter.detach().clone() for parameter in model.policy.parameters()]
         rollout = int(cfg["rollout_steps"]) * count
         model.learn(total_timesteps=rollout, progress_bar=False)
@@ -131,7 +124,7 @@ def optimizer_shape_probe(spec: dict) -> dict:
         changed = sum(not torch.equal(left, right.detach()) for left, right in zip(before, after))
         if changed == 0:
             raise ReproducibilityError("canonical optimizer-shape probe made no parameter update")
-        return {"label": "exact-shape CPU PPO rollout/update", "returncode": 0, "timesteps": rollout, "changed_parameter_tensors": changed}
+        return {"label": f"exact-shape CPU {cfg['name']} rollout/update", "returncode": 0, "timesteps": rollout, "changed_parameter_tensors": changed}
     finally:
         env.close()
 
@@ -162,7 +155,7 @@ def perform_preflight(spec_path: str | Path, *, run_tests: bool = True, enforce_
     return {
         "passed": canonical_pass, "diagnostic_only": not canonical_pass,
         "source_commit": git["commit"], "branch": git["branch"],
-        "spec_path": resolved.relative_to(ROOT).as_posix(), "spec_sha256": spec_hash(spec),
+        "spec_path": spec_reference(resolved), "spec_sha256": spec_hash(spec),
         "run_fingerprint": run_fingerprint(spec, git["commit"]),
         "runtime": runtime, "dependency_mismatches": mismatches, "validations": validations,
     }

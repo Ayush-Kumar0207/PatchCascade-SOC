@@ -37,7 +37,7 @@
     {"round": 3, "candidate_count": 2, "training_seeds": [42, 1042, 2042], "timesteps_per_stage": 40960, "advance": 1}
   ],
   "selection_rule": {
-    "safety_eligibility": ["zero_catastrophic_failures", "zero_cascade_failures"],
+    "safety_eligibility": ["zero_catastrophic_failures", "zero_cascade_failures", "zero_invalid_actions"],
     "ranking": [
       "highest_worst_task_paired_bootstrap_lower_bound_vs_heuristic",
       "highest_worst_task_success_rate",
@@ -55,7 +55,15 @@
     "validation_only_comparison": true,
     "interfaces": [
       {"id": "multidiscrete-ppo", "status": "implemented-baseline"},
-      {"id": "flattened-discrete-maskableppo", "status": "requires-implementation-and-contract-tests"}
+      {
+        "id": "flattened-discrete-maskableppo",
+        "status": "implemented-contract-tested-no-comparison-results",
+        "algorithm": "MaskablePPO",
+        "action_schema_version": "discrete-v1-state-masked-joint-validity",
+        "dependency": "sb3-contrib==2.8.0",
+        "mapping": "((action_type * 15) + node_index) * 8 + vulnerability_index",
+        "mask_semantics": "true exactly when the canonical decoded action passes validate_action_for_observation"
+      }
     ],
     "hierarchical_policy": "consider-only-if-both-predeclared-interfaces-fail-safety-or-feasibility",
     "decision_rule": "Choose the simplest interface whose validation safety gates pass; if both pass, require a positive paired-bootstrap lower bound in sample efficiency before selecting the more complex interface."
@@ -65,5 +73,14 @@
     "selected_spec_required_status": "frozen-final-selected",
     "selected_spec_must_be_committed_before_held_out_evaluation": true,
     "canonical_and_confirmation_results_must_not_exist_when_freezing": true
+  },
+  "orchestration": {
+    "entrypoint": "tools/run_model_selection.py",
+    "real_execution_requires_status": "preregistered-compute-authorized",
+    "campaign_lock": "campaign_lock.json",
+    "resume_state": "campaign_state.json",
+    "decision": "selection_decision.json",
+    "proposed_spec": "proposed_final_spec.json",
+    "synthetic_fixture_is_never_evidence": true
   }
 }

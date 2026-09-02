@@ -634,7 +634,7 @@ model = PPO("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=50_000)
 ```
 
-For the contributor-safe sequence—exact-lock preflight, safe-boundary automatic resume, matched held-out
+For the contributor-safe sequence—exact-lock preflight, safe-boundary automatic resume, trusted-runtime-state handling, matched held-out
 evaluation, verification, and submission bundle—follow
 [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md). Contributors
 do not edit seeds or hyperparameters; the version-controlled spec supplies them.

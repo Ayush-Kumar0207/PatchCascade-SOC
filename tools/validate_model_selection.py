@@ -14,6 +14,11 @@ def validate() -> dict[str, object]:
     selection = json.loads((ROOT / "training_specs/model_selection_v1.json").read_text(encoding="utf-8"))
     canonical = json.loads((ROOT / "training_specs/canonical_v1.json").read_text(encoding="utf-8"))
     policy = selection["data_policy"]
+    if selection["status"] not in {
+        "preregistered-no-results-compute-not-authorized",
+        "preregistered-compute-authorized",
+    }:
+        raise ValueError("campaign authorization status is unsupported")
     if policy["allowed_splits"] != ["training", "validation"]:
         raise ValueError("selection may access only training and validation splits")
     if set(policy["forbidden_splits"]) != {"canonical_test", "confirmation_test"}:
@@ -38,6 +43,25 @@ def validate() -> dict[str, object]:
     interfaces = selection["action_interface_investigation"]["interfaces"]
     if [item["id"] for item in interfaces] != ["multidiscrete-ppo", "flattened-discrete-maskableppo"]:
         raise ValueError("predeclared action-interface comparison drifted")
+    masked = interfaces[1]
+    if (
+        masked.get("status") != "implemented-contract-tested-no-comparison-results"
+        or masked.get("algorithm") != "MaskablePPO"
+        or masked.get("action_schema_version") != "discrete-v1-state-masked-joint-validity"
+        or masked.get("dependency") != "sb3-contrib==2.8.0"
+    ):
+        raise ValueError("flattened MaskablePPO candidate contract is incomplete")
+    if selection["selection_rule"]["safety_eligibility"] != [
+        "zero_catastrophic_failures", "zero_cascade_failures", "zero_invalid_actions"
+    ]:
+        raise ValueError("selection safety eligibility gates drifted")
+    orchestration = selection.get("orchestration", {})
+    if (
+        orchestration.get("entrypoint") != "tools/run_model_selection.py"
+        or orchestration.get("real_execution_requires_status") != "preregistered-compute-authorized"
+        or orchestration.get("synthetic_fixture_is_never_evidence") is not True
+    ):
+        raise ValueError("model-selection orchestration contract is incomplete")
     return {
         "passed": True,
         "campaign_id": selection["campaign_id"],

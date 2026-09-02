@@ -42,6 +42,7 @@ from models import (
     PatchCascadeAction,
     PatchCascadeObservation,
     SeverityLevel,
+    validate_action_for_observation,
 )
 
 
@@ -59,6 +60,7 @@ MAX_DEPS = 20        # Complex graphs can have many edges
 ENVIRONMENT_API_VERSION = "patchcascade-gym-v4"
 OBSERVATION_SCHEMA_VERSION = "gym-observation-v3-cve-host-incidence"
 ACTION_SCHEMA_VERSION = "multidiscrete-v2-joint-validity-penalized"
+FLATTENED_ACTION_SCHEMA_VERSION = "discrete-v1-state-masked-joint-validity"
 
 # Feature sizes per element
 NODE_FEATURES = 6    # tier, state, patch_turns, has_vuln, is_exploited, is_critical_tier
@@ -78,6 +80,14 @@ OBS_SIZE = (
 
 # Action types (5 total)
 NUM_ACTION_TYPES = 5  # scan, suspend, patch, resume, noop
+FLATTENED_ACTION_COUNT = NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS
+ACTION_TYPES = (
+    ActionType.SCAN_HOST,
+    ActionType.SUSPEND_SERVICE,
+    ActionType.APPLY_PATCH,
+    ActionType.RESUME_SERVICE,
+    ActionType.NOOP,
+)
 
 # Action encoding: MultiDiscrete([action_type, target_node, target_vuln])
 # This allows any combination: "apply_patch node_3 vuln_2"
@@ -235,7 +245,7 @@ class PatchCascadeGymEnv(gym.Env):
         return obs_array, info
 
     def step(
-        self, action: np.ndarray | list[int]
+        self, action: np.ndarray | list[int] | int
     ) -> tuple[np.ndarray, float, bool, bool, dict]:
         """
         Execute one step in the environment.
@@ -432,18 +442,10 @@ class PatchCascadeGymEnv(gym.Env):
         vuln_idx = int(action[2])
 
         # Map action type
-        action_types = [
-            ActionType.SCAN_HOST,
-            ActionType.SUSPEND_SERVICE,
-            ActionType.APPLY_PATCH,
-            ActionType.RESUME_SERVICE,
-            ActionType.NOOP,
-        ]
-
-        if action_type_idx >= len(action_types):
+        if action_type_idx >= len(ACTION_TYPES):
             action_type_idx = 4  # NOOP fallback
 
-        action_type = action_types[action_type_idx]
+        action_type = ACTION_TYPES[action_type_idx]
 
         # NOOP needs no target
         if action_type == ActionType.NOOP:
@@ -545,6 +547,88 @@ class PatchCascadeGymEnv(gym.Env):
     def unwrapped_env(self) -> PatchCascadeEnv:
         """Access the underlying PatchCascade environment."""
         return self._env
+
+
+class FlattenedMaskedPatchCascadeEnv(PatchCascadeGymEnv):
+    """One-to-one Discrete action adapter for state-dependent MaskablePPO.
+
+    The flattened ID is ``((action_type * MAX_NODES) + node) * MAX_VULNS + cve``.
+    Only one encoding is canonical for target-free or CVE-free operations, which
+    removes aliases without silently repairing an invalid selection.
+    """
+
+    metadata = {
+        **PatchCascadeGymEnv.metadata,
+        "action_schema_version": FLATTENED_ACTION_SCHEMA_VERSION,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.action_space = spaces.Discrete(FLATTENED_ACTION_COUNT)
+
+    @staticmethod
+    def flatten_action(action_type_idx: int, node_idx: int, vuln_idx: int) -> int:
+        if not 0 <= action_type_idx < NUM_ACTION_TYPES:
+            raise ValueError("action_type_idx is outside the flattened action schema")
+        if not 0 <= node_idx < MAX_NODES:
+            raise ValueError("node_idx is outside the flattened action schema")
+        if not 0 <= vuln_idx < MAX_VULNS:
+            raise ValueError("vuln_idx is outside the flattened action schema")
+        return (action_type_idx * MAX_NODES + node_idx) * MAX_VULNS + vuln_idx
+
+    @staticmethod
+    def unflatten_action(action_id: int) -> tuple[int, int, int]:
+        if not 0 <= action_id < FLATTENED_ACTION_COUNT:
+            raise ValueError("action ID is outside the flattened action schema")
+        action_type_idx, remainder = divmod(action_id, MAX_NODES * MAX_VULNS)
+        node_idx, vuln_idx = divmod(remainder, MAX_VULNS)
+        return action_type_idx, node_idx, vuln_idx
+
+    @staticmethod
+    def is_canonical_coordinates(action_type_idx: int, node_idx: int, vuln_idx: int) -> bool:
+        if action_type_idx == 4:
+            return node_idx == 0 and vuln_idx == 0
+        if action_type_idx in {0, 1, 3}:
+            return vuln_idx == 0
+        return action_type_idx == 2
+
+    def _invalid_flat_action(self, action_id: int) -> PatchCascadeAction:
+        return PatchCascadeAction(
+            action_type=ActionType.SCAN_HOST,
+            target=f"__invalid_flat_action_{action_id}__",
+            reason="RL agent selected a noncanonical or out-of-range flattened action",
+        )
+
+    def _decode_action(self, action: np.ndarray | list[int] | int) -> PatchCascadeAction:
+        try:
+            action_id = int(np.asarray(action).item())
+            action_type_idx, node_idx, vuln_idx = self.unflatten_action(action_id)
+        except (TypeError, ValueError):
+            return self._invalid_flat_action(-1)
+        if not self.is_canonical_coordinates(action_type_idx, node_idx, vuln_idx):
+            return self._invalid_flat_action(action_id)
+        return super()._decode_action(np.asarray([action_type_idx, node_idx, vuln_idx]))
+
+    def action_masks(self) -> np.ndarray:
+        """Return the exact semantic-validity mask required by SB3-contrib."""
+        mask = np.zeros(FLATTENED_ACTION_COUNT, dtype=bool)
+        if self._obs is None:
+            return mask
+        for action_id in range(FLATTENED_ACTION_COUNT):
+            action_type_idx, node_idx, vuln_idx = self.unflatten_action(action_id)
+            if not self.is_canonical_coordinates(action_type_idx, node_idx, vuln_idx):
+                continue
+            decoded = super()._decode_action(
+                np.asarray([action_type_idx, node_idx, vuln_idx])
+            )
+            mask[action_id] = validate_action_for_observation(decoded, self._obs)[0]
+        if not mask.any():
+            raise RuntimeError("flattened action contract produced no valid action")
+        return mask
+
+    def get_action_mask(self) -> np.ndarray:
+        """Compatibility alias; MaskablePPO consumes ``action_masks`` directly."""
+        return self.action_masks()
 
 
 # =============================================================================

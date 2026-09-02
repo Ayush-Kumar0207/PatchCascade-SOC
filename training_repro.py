@@ -69,7 +69,6 @@ def load_spec(path: str | Path) -> tuple[dict[str, Any], Path]:
     expected_environment_versions = {
         "api_version": "patchcascade-gym-v4",
         "schema_version": "gym-observation-v3-cve-host-incidence",
-        "action_schema_version": "multidiscrete-v2-joint-validity-penalized",
         "reward_schema_version": "pbrs-v2-gamma-0.99-terminal-zero",
     }
     drift = {
@@ -81,6 +80,21 @@ def load_spec(path: str | Path) -> tuple[dict[str, Any], Path]:
         raise ReproducibilityError(
             "Canonical environment/API compatibility version mismatch: " + canonical_json(drift)
         )
+    action_schema = spec["environment"].get("action_schema_version")
+    algorithm_name = spec["algorithm"].get("name")
+    allowed_action_algorithms = {
+        "multidiscrete-v2-joint-validity-penalized": "PPO",
+        "discrete-v1-state-masked-joint-validity": "MaskablePPO",
+    }
+    if action_schema not in allowed_action_algorithms:
+        raise ReproducibilityError(f"Unsupported action schema: {action_schema}")
+    if algorithm_name != allowed_action_algorithms[action_schema]:
+        raise ReproducibilityError(
+            f"Action schema {action_schema} requires algorithm {allowed_action_algorithms[action_schema]}, "
+            f"not {algorithm_name}"
+        )
+    if action_schema.startswith("discrete-") and spec.get("dependencies", {}).get("sb3-contrib") != "2.8.0":
+        raise ReproducibilityError("Flattened MaskablePPO requires exact sb3-contrib==2.8.0")
     task_levels = spec["environment"]["task_levels"]
     if len(task_levels) != len(set(task_levels)) or not task_levels:
         raise ReproducibilityError("Canonical task levels must be non-empty and unique")
@@ -105,6 +119,15 @@ def load_spec(path: str | Path) -> tuple[dict[str, Any], Path]:
 
 def spec_hash(spec: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(spec).encode()).hexdigest()
+
+
+def spec_reference(path: str | Path) -> str:
+    """Return a portable, non-secret display reference for repo or generated specs."""
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return f"external-selection-spec/{resolved.name}"
 
 
 def _git(*args: str, check: bool = True) -> str:
@@ -284,7 +307,7 @@ def provenance(spec: dict[str, Any], spec_path: Path, run_dir: Path, command: li
     git = git_metadata()
     return scrub({
         "schema_version": 1, "captured_at": utc_now(), "git": git,
-        "spec_path": spec_path.resolve().relative_to(ROOT.resolve()).as_posix(), "spec_sha256": spec_hash(spec),
+        "spec_path": spec_reference(spec_path), "spec_sha256": spec_hash(spec),
         "run_fingerprint": run_fingerprint(spec, git["commit"]),
         "runtime": runtime_info(spec.get("dependencies", {})),
         "command": command, "run_directory": ".",

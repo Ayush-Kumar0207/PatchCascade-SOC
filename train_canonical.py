@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sb3_contrib import MaskablePPO
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import configure
@@ -26,13 +27,20 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from gym_wrapper import PatchCascadeGymEnv
+from gym_wrapper import (
+    FLATTENED_ACTION_SCHEMA_VERSION,
+    FlattenedMaskedPatchCascadeEnv,
+    PatchCascadeGymEnv,
+)
 from training_repro import (
     ReproducibilityError, append_event, atomic_json, ensure_external_run_dir,
     ensure_run_lock, file_identity, load_spec, provenance, resolve_run_path,
     seed_everything, spec_hash, utc_now, validate_file_identity, validate_resume,
+    spec_reference,
 )
 from tools.training_preflight import perform_preflight
+
+TRUSTED_RUNTIME_STATE_FORMAT = "python-cloudpickle-trusted-run-only-v1"
 
 
 def save_model_atomic(model: PPO, path: Path) -> None:
@@ -54,11 +62,30 @@ class BoundaryCheckpointPPO(PPO):
             self.boundary_hook(self)
 
 
+class BoundaryCheckpointMaskablePPO(MaskablePPO):
+    """MaskablePPO with the same complete-update checkpoint boundary."""
+
+    boundary_hook = None
+
+    def train(self) -> None:
+        super().train()
+        if self.boundary_hook is not None:
+            self.boundary_hook(self)
+
+
+def model_algorithm_class(model: PPO | MaskablePPO) -> str:
+    if isinstance(model, BoundaryCheckpointMaskablePPO):
+        return "BoundaryCheckpointMaskablePPO"
+    if isinstance(model, BoundaryCheckpointPPO):
+        return "BoundaryCheckpointPPO"
+    raise ReproducibilityError("model class lacks the registered safe-boundary checkpoint contract")
+
+
 def runtime_state_path(model_path: Path) -> Path:
     return model_path.with_suffix(".runtime.pkl")
 
 
-def _runtime_state(model: PPO) -> dict[str, Any]:
+def _runtime_state(model: PPO | MaskablePPO) -> dict[str, Any]:
     """Capture stochastic and environment state excluded by SB3 model.save()."""
     import torch
 
@@ -66,7 +93,9 @@ def _runtime_state(model: PPO) -> dict[str, Any]:
     if env is None:
         raise ReproducibilityError("cannot checkpoint PPO without its vectorized environment")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "serialization_format": TRUSTED_RUNTIME_STATE_FORMAT,
+        "algorithm_class": model_algorithm_class(model),
         "safe_boundary": "after-complete-rollout-and-optimizer-update",
         "num_timesteps": int(model.num_timesteps),
         "python_random_state": random.getstate(),
@@ -80,7 +109,7 @@ def _runtime_state(model: PPO) -> dict[str, Any]:
     }
 
 
-def save_runtime_state_atomic(model: PPO, path: Path) -> None:
+def save_runtime_state_atomic(model: PPO | MaskablePPO, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     with temporary.open("wb") as handle:
@@ -90,7 +119,7 @@ def save_runtime_state_atomic(model: PPO, path: Path) -> None:
     os.replace(temporary, path)
 
 
-def save_resumable_checkpoint(model: PPO, model_path: Path, run_dir: Path) -> tuple[dict, dict]:
+def save_resumable_checkpoint(model: PPO | MaskablePPO, model_path: Path, run_dir: Path) -> tuple[dict, dict]:
     """Persist an SB3 model and its exact boundary runtime state before metadata."""
     hook = getattr(model, "boundary_hook", None)
     if hasattr(model, "boundary_hook"):
@@ -109,11 +138,36 @@ def save_resumable_checkpoint(model: PPO, model_path: Path, run_dir: Path) -> tu
 
 
 def load_resumable_checkpoint(
-    model_path: Path, metadata: dict[str, Any], run_dir: Path, device: str
-) -> BoundaryCheckpointPPO:
-    """Validate and restore the complete safe-boundary continuation state."""
+    model_path: Path, metadata: dict[str, Any], run_dir: Path, device: str, *, trusted: bool = False,
+) -> BoundaryCheckpointPPO | BoundaryCheckpointMaskablePPO:
+    """Validate and restore trusted executable continuation state.
+
+    ``cloudpickle`` can execute code while loading. Artifact verification only
+    hashes this file; deserialization is an explicit trusted-run operation.
+    """
     import torch
 
+    if not trusted:
+        raise ReproducibilityError(
+            "runtime state is executable Python serialization; resume only a run you created "
+            "or audited in an isolated environment, then pass trusted=True"
+        )
+    algorithm_class = metadata.get("algorithm_class")
+    if metadata.get("runtime_state_format") != TRUSTED_RUNTIME_STATE_FORMAT:
+        raise ReproducibilityError("checkpoint metadata has an unknown executable runtime-state format")
+    model_types = {
+        "BoundaryCheckpointPPO": BoundaryCheckpointPPO,
+        "BoundaryCheckpointMaskablePPO": BoundaryCheckpointMaskablePPO,
+    }
+    model_type = model_types.get(str(algorithm_class))
+    if model_type is None:
+        raise ReproducibilityError("checkpoint metadata has an unsupported algorithm class")
+    expected_algorithm_class = {
+        "PPO": "BoundaryCheckpointPPO",
+        "MaskablePPO": "BoundaryCheckpointMaskablePPO",
+    }.get(metadata.get("algorithm", {}).get("name"))
+    if algorithm_class != expected_algorithm_class:
+        raise ReproducibilityError("checkpoint algorithm class does not match its locked experiment")
     state_identity = metadata.get("runtime_state_identity", {})
     state_path = resolve_run_path(run_dir, str(state_identity.get("path", "")))
     validate_file_identity(state_path, state_identity, relative_to=run_dir)
@@ -123,7 +177,9 @@ def load_resumable_checkpoint(
     except Exception as exc:
         raise ReproducibilityError("checkpoint runtime state is missing, corrupt, or incompatible") from exc
     if (
-        state.get("schema_version") != 1
+        state.get("schema_version") != 2
+        or state.get("serialization_format") != TRUSTED_RUNTIME_STATE_FORMAT
+        or state.get("algorithm_class") != algorithm_class
         or state.get("safe_boundary") != "after-complete-rollout-and-optimizer-update"
         or state.get("num_timesteps") != metadata.get("total_timesteps")
     ):
@@ -131,7 +187,7 @@ def load_resumable_checkpoint(
     env = state.get("vector_environment")
     if not isinstance(env, DummyVecEnv):
         raise ReproducibilityError("checkpoint vectorized environment state is incompatible")
-    model = BoundaryCheckpointPPO.load(model_path, env=env, device=device, force_reset=False)
+    model = model_type.load(model_path, env=env, device=device, force_reset=False)
     model._last_obs = state.get("last_observation")
     model._last_episode_starts = state.get("last_episode_starts")
     model._last_original_obs = state.get("last_original_observation")
@@ -161,6 +217,21 @@ class MixedTaskEnv(PatchCascadeGymEnv):
         return super().reset(seed=seed, options=merged)
 
 
+class MixedTaskMaskedEnv(FlattenedMaskedPatchCascadeEnv):
+    def __init__(self, tasks: list[str], seed: int, **kwargs: Any):
+        self._mixed_tasks = list(tasks)
+        self._task_rng = random.Random(seed)
+        super().__init__(task_level=self._mixed_tasks[0], seed=seed, **kwargs)
+
+    def reset(self, seed: int | None = None, options: dict | None = None):
+        if seed is not None:
+            self._task_rng = random.Random(seed)
+        chosen = self._task_rng.choice(self._mixed_tasks)
+        merged = dict(options or {})
+        merged["task_level"] = chosen
+        return super().reset(seed=seed, options=merged)
+
+
 def make_vec_env(spec: dict, stage: dict, stage_index: int) -> DummyVecEnv:
     global_seed = int(spec["seeds"]["global_training_seed"])
     count = int(spec["algorithm"]["parallel_environments"])
@@ -174,10 +245,12 @@ def make_vec_env(spec: dict, stage: dict, stage_index: int) -> DummyVecEnv:
                 "normalize_obs": spec["environment"]["normalize_observations"],
                 "reward_scale": spec["environment"]["reward_scale"],
             }
+            masked = spec["environment"]["action_schema_version"] == FLATTENED_ACTION_SCHEMA_VERSION
             if stage["task"] == "mixed":
-                env = MixedTaskEnv(stage["tasks"], **kwargs)
+                env = (MixedTaskMaskedEnv if masked else MixedTaskEnv)(stage["tasks"], **kwargs)
             else:
-                env = PatchCascadeGymEnv(task_level=stage["task"], **kwargs)
+                env_class = FlattenedMaskedPatchCascadeEnv if masked else PatchCascadeGymEnv
+                env = env_class(task_level=stage["task"], **kwargs)
             return Monitor(env)
 
         return create
@@ -185,9 +258,14 @@ def make_vec_env(spec: dict, stage: dict, stage_index: int) -> DummyVecEnv:
     return DummyVecEnv([factory(rank) for rank in range(count)])
 
 
-def model_from_spec(spec: dict, env: DummyVecEnv) -> BoundaryCheckpointPPO:
+def model_from_spec(spec: dict, env: DummyVecEnv) -> BoundaryCheckpointPPO | BoundaryCheckpointMaskablePPO:
     cfg = spec["algorithm"]
-    return BoundaryCheckpointPPO(
+    model_class = (
+        BoundaryCheckpointMaskablePPO
+        if spec["environment"]["action_schema_version"] == FLATTENED_ACTION_SCHEMA_VERSION
+        else BoundaryCheckpointPPO
+    )
+    return model_class(
         cfg["policy"], env, seed=spec["seeds"]["global_training_seed"],
         learning_rate=cfg["learning_rate"], gamma=cfg["gamma"], gae_lambda=cfg["gae_lambda"],
         clip_range=cfg["clip_range"], ent_coef=cfg["entropy_coefficient"], vf_coef=cfg["value_coefficient"],
@@ -272,6 +350,8 @@ class SafetyCheckpointCallback(BaseCallback):
             "stage_timesteps_completed": self.num_timesteps - stage_start,
             "total_timesteps": self.num_timesteps, "model_file": model_path.name,
             "model_identity": identity, "runtime_state_identity": runtime_identity,
+            "algorithm_class": model_algorithm_class(self.model),
+            "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
             "safe_boundary": "after-complete-rollout-and-optimizer-update",
         }
         atomic_json(model_path.with_suffix(".metadata.json"), metadata)
@@ -289,6 +369,8 @@ class SafetyCheckpointCallback(BaseCallback):
             self.lock, self.stage["task"], checkpoint=identity["path"],
             checkpoint_sha256=identity["sha256"], runtime_state=runtime_identity["path"],
             runtime_state_sha256=runtime_identity["sha256"],
+            runtime_state_format=TRUSTED_RUNTIME_STATE_FORMAT,
+            algorithm_class=model_algorithm_class(self.model),
             safe_boundary=metadata["safe_boundary"], total_timesteps=self.num_timesteps,
         )
         self.last_checkpoint = self.num_timesteps
@@ -321,6 +403,8 @@ class SafetyCheckpointCallback(BaseCallback):
                     checkpoint_sha256=pruned_model_identity["sha256"],
                     runtime_state=pruned_runtime_identity["path"],
                     runtime_state_sha256=pruned_runtime_identity["sha256"],
+                    runtime_state_format=pruned_metadata["runtime_state_format"],
+                    algorithm_class=pruned_metadata["algorithm_class"],
                     reason="configured-retention-limit",
                 )
 
@@ -420,7 +504,7 @@ def train(spec: dict, spec_path: Path, run_dir: Path, lock: dict) -> None:
         validate_resume(final_metadata, lock)
         validate_file_identity(final_path, final_metadata.get("model_identity", {}), relative_to=run_dir)
         return
-    model: PPO | None = None
+    model: PPO | MaskablePPO | None = None
     checkpoint_metadata: dict[str, Any] | None = None
     latest = progress.get("latest_checkpoint")
     if latest:
@@ -475,7 +559,7 @@ def train(spec: dict, spec_path: Path, run_dir: Path, lock: dict) -> None:
                     raise ReproducibilityError("checkpoint metadata was not loaded")
                 model = load_resumable_checkpoint(
                     resolve_run_path(run_dir, latest), checkpoint_metadata, run_dir,
-                    spec["algorithm"]["device"],
+                    spec["algorithm"]["device"], trusted=True,
                 )
                 restored_env = model.get_env()
                 if latest_path.name.startswith("checkpoint_"):
@@ -500,7 +584,7 @@ def train(spec: dict, spec_path: Path, run_dir: Path, lock: dict) -> None:
             progress["stage_start_total_timesteps"] = int(model.num_timesteps) - already
             append_event(events, "stage_started", lock, stage["task"], stage_index=stage_index, remaining_timesteps=remaining)
             callback = SafetyCheckpointCallback(run_dir, spec, lock, progress, stage, stage_index)
-            if not isinstance(model, BoundaryCheckpointPPO):
+            if not isinstance(model, (BoundaryCheckpointPPO, BoundaryCheckpointMaskablePPO)):
                 raise ReproducibilityError("canonical trainer loaded a PPO class without boundary checkpoint support")
             model.boundary_hook = lambda _model: callback.save_checkpoint()
             model.learn(total_timesteps=remaining, reset_num_timesteps=False, callback=callback, progress_bar=False)
@@ -512,6 +596,8 @@ def train(spec: dict, spec_path: Path, run_dir: Path, lock: dict) -> None:
             **lock, "stage_index": stage_index, "stage": stage,
             "total_timesteps": model.num_timesteps, "model_identity": stage_identity,
             "runtime_state_identity": stage_runtime_identity,
+            "algorithm_class": model_algorithm_class(model),
+            "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
             "safe_boundary": "after-complete-rollout-and-optimizer-update",
         })
         progress.setdefault("completed_stages", []).append(stage["task"])
@@ -531,12 +617,16 @@ def train(spec: dict, spec_path: Path, run_dir: Path, lock: dict) -> None:
             raise ReproducibilityError("training progress has no resumable model")
         model = load_resumable_checkpoint(
             resolve_run_path(run_dir, latest), checkpoint_metadata, run_dir,
-            spec["algorithm"]["device"],
+            spec["algorithm"]["device"], trusted=True,
         )
     final_path = run_dir / spec["outputs"]["final_model"]
     save_model_atomic(model, final_path)
     final_identity = file_identity(final_path, relative_to=run_dir)
-    atomic_json(run_dir / spec["outputs"]["final_model_metadata"], {**lock, "status": "frozen", "total_timesteps": model.num_timesteps, "completed_stages": progress["completed_stages"], "model_identity": final_identity})
+    atomic_json(run_dir / spec["outputs"]["final_model_metadata"], {
+        **lock, "status": "frozen", "total_timesteps": model.num_timesteps,
+        "completed_stages": progress["completed_stages"], "model_identity": final_identity,
+        "algorithm_class": model_algorithm_class(model),
+    })
     progress.update(status="trained", final_model=final_identity["path"])
     atomic_json(run_dir / spec["outputs"]["progress"], progress)
     append_event(events, "final_model_created", lock, "final", model=final_identity["path"], model_sha256=final_identity["sha256"], total_timesteps=model.num_timesteps)
@@ -549,15 +639,22 @@ def main() -> None:
     parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
     try:
-        report = perform_preflight(args.spec, run_tests=True, enforce_lock=True)
+        spec, spec_path = load_spec(args.spec)
+        if not args.preflight_only and spec.get("status") not in {
+            "development-selection-candidate", "frozen-final-selected"
+        }:
+            raise ReproducibilityError(
+                "expensive training is not authorized for this provisional baseline; "
+                "use the reviewed model-selection orchestrator or a frozen-final-selected spec"
+            )
+        report = perform_preflight(spec_path, run_tests=True, enforce_lock=True)
         if args.preflight_only:
             print(json.dumps(report, indent=2))
             return
-        spec, spec_path = load_spec(args.spec)
         run_dir = ensure_external_run_dir(args.run_dir, float(spec["runtime"]["minimum_free_disk_gib"]))
         lock = ensure_run_lock(run_dir, spec, report["source_commit"])
         report_path = persist_preflight_report(run_dir, spec, lock, report)
-        capture_provenance_files(run_dir, spec, spec_path, ["python", "train_canonical.py", "--spec", spec_path.relative_to(ROOT).as_posix(), "--run-dir", "<RUN_DIR>"], lock)
+        capture_provenance_files(run_dir, spec, spec_path, ["python", "train_canonical.py", "--spec", spec_reference(spec_path), "--run-dir", "<RUN_DIR>"], lock)
         events = run_dir / spec["outputs"]["events"]
         if not events.exists():
             append_event(events, "run_created", lock, "preflight")

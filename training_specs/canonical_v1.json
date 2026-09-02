@@ -98,6 +98,7 @@
   "dependencies": {
     "gymnasium": "1.2.3",
     "stable-baselines3": "2.8.0",
+    "sb3-contrib": "2.8.0",
     "cloudpickle": "3.1.2",
     "pandas": "3.0.2",
     "pydantic": "2.12.5",
@@ -111,19 +112,23 @@
   "required_source_files": [
     "training_specs/canonical_v1.json", "training_specs/model_selection_v1.json",
     "MODEL_SELECTION_PROTOCOL.md", "KNOWN_TRAINING_FAILURE_MODES.md",
+    "RUNTIME_STATE_SECURITY.md",
     "train_canonical.py", "training_repro.py",
     "environment.py", "gym_wrapper.py", "models.py", "grader.py", "benchmark.py",
     "tools/run_evaluation.py", "tools/verify_training_artifacts.py",
     "tools/resume_equivalence_probe.py", "tools/validate_model_selection.py",
+    "tools/run_model_selection.py",
     "smoke_test.py", "tests"
   ],
   "training_critical_files": [
     "training_specs/canonical_v1.json", "training_specs/model_selection_v1.json",
     "MODEL_SELECTION_PROTOCOL.md", "KNOWN_TRAINING_FAILURE_MODES.md",
+    "RUNTIME_STATE_SECURITY.md",
     "train_canonical.py", "training_repro.py",
     "environment.py", "gym_wrapper.py", "models.py", "grader.py", "benchmark.py",
     "tools/run_evaluation.py", "tools/verify_training_artifacts.py",
     "tools/resume_equivalence_probe.py", "tools/validate_model_selection.py",
+    "tools/run_model_selection.py",
     "requirements.txt", "requirements-training.txt", "uv.lock"
   ]
 }

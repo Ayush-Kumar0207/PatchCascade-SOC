@@ -39,3 +39,8 @@ jobs:
         run: python tools/training_preflight.py --spec training_specs/canonical_v1.json
       - name: New-process safe-resume equivalence probe
         run: python tools/resume_equivalence_probe.py
+      - name: Synthetic model-selection orchestration fixture
+        run: >-
+          python tools/run_model_selection.py
+          --campaign-dir /tmp/patchcascade-selection-${{ github.run_id }}-${{ github.run_attempt }}
+          --synthetic-fixture

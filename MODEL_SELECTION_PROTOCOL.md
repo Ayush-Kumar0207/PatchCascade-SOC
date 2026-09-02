@@ -10,6 +10,24 @@ The machine-readable preregistration is
 It permits training and the ten validation seeds only. Fifty canonical and fifty
 confirmation seeds remain inaccessible to selection.
 
+`tools/run_model_selection.py` is the mechanical entry point. It derives every
+candidate spec, seed, budget, path, resume identity, safety decision, rank, and
+survivor from the preregistration. A campaign directory is locked to source and
+protocol hashes; reruns revalidate existing evidence and resume the same candidate
+run. It refuses real compute while the committed protocol status says
+`preregistered-no-results-compute-not-authorized`.
+
+The orchestration/ranking path can be tested without training:
+
+```bash
+python tools/run_model_selection.py --campaign-dir /tmp/patchcascade-selection-fixture --synthetic-fixture
+```
+
+Synthetic output is labelled `synthetic-fixture-not-evidence` and can never be
+promoted. After explicit review authorizes compute in the version-controlled
+protocol, omit `--synthetic-fixture`; there are no contributor-entered candidates,
+seeds, budgets, ranking flags, or evaluator settings.
+
 ## Bounded selection
 
 Eight declared PPO candidates vary only learning rate, entropy coefficient, and
@@ -32,16 +50,19 @@ models or more steps do not automatically win.
 
 The current MultiDiscrete PPO is an implemented baseline, not a final quality
 claim. Joint node/CVE validity cannot be represented by independent factor masks.
-Before final freeze, development-only engineering must implement and contract-test
-a flattened Discrete representation with state-dependent MaskablePPO masks. The
-two interfaces are compared on validation only. The more complex masked interface
+The flattened Discrete representation and state-dependent MaskablePPO candidate
+are now implemented and contract-tested, but have **no comparison results**. Its
+600 IDs have an exact bijection, non-semantic aliases are invalid rather than
+repaired, and every mask bit is derived from the authoritative action validator.
+`sb3-contrib==2.8.0` is exact-locked. The two interfaces are compared on validation
+only. The more complex masked interface
 is selected only if safety passes and it has a positive paired-bootstrap lower
 bound in sample efficiency; otherwise the simpler safe interface wins. A
 hierarchical policy is considered only if both preregistered interfaces fail.
 
-This PR does not add `sb3-contrib` or silently switch action semantics because no
-validation evidence exists yet. Doing so would disguise an untested methodology
-choice as a correctness repair.
+This infrastructure PR does not run that comparison or declare either interface
+superior. The provisional baseline stays MultiDiscrete PPO until the registered
+development evidence supports a decision.
 
 ## Freeze boundary
 

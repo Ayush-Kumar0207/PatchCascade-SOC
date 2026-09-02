@@ -15,12 +15,16 @@ from environment import INVALID_ACTION_PENALTY, TIME_PRESSURE_PENALTY
 from gym_wrapper import (
     ACTION_SCHEMA_VERSION,
     ENVIRONMENT_API_VERSION,
+    FLATTENED_ACTION_COUNT,
+    FLATTENED_ACTION_SCHEMA_VERSION,
+    FlattenedMaskedPatchCascadeEnv,
     MAX_NODES,
     NODE_FEATURES,
     OBSERVATION_SCHEMA_VERSION,
     PatchCascadeGymEnv,
     VULN_FEATURES,
 )
+from models import validate_action_for_observation
 from training_repro import (
     ReproducibilityError,
     build_lock,
@@ -36,9 +40,12 @@ from training_repro import (
 from tools.verify_training_artifacts import verify_run
 from tools.run_evaluation import run_evaluation
 from tools.validate_model_selection import validate as validate_model_selection
+from tools.run_model_selection import orchestrate as run_selection_campaign
 from train_canonical import (
+    TRUSTED_RUNTIME_STATE_FORMAT,
     load_resumable_checkpoint,
     make_vec_env,
+    model_algorithm_class,
     model_from_spec,
     save_resumable_checkpoint,
 )
@@ -68,10 +75,13 @@ def test_safe_boundary_resume_restores_equivalent_cpu_parameters(tmp_path):
     checkpoint = tmp_path / "checkpoint_8.zip"
     model_identity, runtime_identity = save_resumable_checkpoint(model, checkpoint, tmp_path)
     metadata = {
+        "algorithm": probe["algorithm"],
         "total_timesteps": 8,
         "model_identity": model_identity,
         "runtime_state_identity": runtime_identity,
         "safe_boundary": "after-complete-rollout-and-optimizer-update",
+        "algorithm_class": model_algorithm_class(model),
+        "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
     }
 
     model.learn(total_timesteps=8, reset_num_timesteps=False, progress_bar=False)
@@ -80,7 +90,9 @@ def test_safe_boundary_resume_restores_equivalent_cpu_parameters(tmp_path):
     }
     model.get_env().close()
 
-    resumed = load_resumable_checkpoint(checkpoint, metadata, tmp_path, "cpu")
+    with pytest.raises(ReproducibilityError, match="executable Python serialization"):
+        load_resumable_checkpoint(checkpoint, metadata, tmp_path, "cpu")
+    resumed = load_resumable_checkpoint(checkpoint, metadata, tmp_path, "cpu", trusted=True)
     resumed.learn(total_timesteps=8, reset_num_timesteps=False, progress_bar=False)
     resumed_state = resumed.policy.state_dict()
     assert resumed.num_timesteps == model.num_timesteps == 16
@@ -96,12 +108,115 @@ def test_provisional_spec_seals_held_out_splits(tmp_path):
     assert report["passed"] is True
 
 
+def test_model_selection_orchestrator_is_deterministic_resumable_and_safety_first(tmp_path):
+    campaign = tmp_path / "selection-fixture"
+    first = run_selection_campaign(campaign, synthetic_fixture=True)
+    second = run_selection_campaign(campaign, synthetic_fixture=True)
+    assert canonical_json(first) == canonical_json(second)
+    assert first["held_out_splits_used"] is False
+    assert first["status"] == "synthetic-fixture-complete"
+    assert "c01" not in first["rounds"][0]["advanced"]
+    decision = json.loads((campaign / "selection_decision.json").read_text(encoding="utf-8"))
+    proposal = json.loads((campaign / "proposed_final_spec.json").read_text(encoding="utf-8"))
+    assert decision["manual_override"] is False
+    assert proposal["status"] == "synthetic-fixture-not-evidence"
+    assert proposal["selection_evidence"]["action_interface_decision_required"] is True
+
+
+def test_model_selection_real_compute_is_fail_closed_while_unauthorized(tmp_path):
+    with pytest.raises(ReproducibilityError, match="compute is not authorized"):
+        run_selection_campaign(tmp_path / "forbidden-real-selection")
+
+
 def test_environment_compatibility_versions_match_frozen_spec():
     spec, _ = load_spec(SPEC_PATH)
     assert spec["environment"]["api_version"] == ENVIRONMENT_API_VERSION
     assert spec["environment"]["schema_version"] == OBSERVATION_SCHEMA_VERSION
     assert spec["environment"]["action_schema_version"] == ACTION_SCHEMA_VERSION
     assert PatchCascadeGymEnv.metadata["environment_api_version"] == ENVIRONMENT_API_VERSION
+
+
+def test_flattened_action_ids_are_bijective_and_alias_free():
+    seen = set()
+    for action_id in range(FLATTENED_ACTION_COUNT):
+        coordinates = FlattenedMaskedPatchCascadeEnv.unflatten_action(action_id)
+        assert FlattenedMaskedPatchCascadeEnv.flatten_action(*coordinates) == action_id
+        seen.add(coordinates)
+    assert len(seen) == FLATTENED_ACTION_COUNT
+
+
+def test_flattened_mask_exactly_matches_authoritative_semantic_validation():
+    env = FlattenedMaskedPatchCascadeEnv(task_level="zero_day", seed=42)
+    env.reset(seed=42)
+    assert env._obs is not None
+    mask = env.action_masks()
+    semantic_keys = set()
+    for action_id in range(FLATTENED_ACTION_COUNT):
+        coordinates = env.unflatten_action(action_id)
+        canonical = env.is_canonical_coordinates(*coordinates)
+        action = env._decode_action(action_id)
+        expected = canonical and validate_action_for_observation(action, env._obs)[0]
+        assert bool(mask[action_id]) is expected
+        if expected:
+            key = (action.action_type.value, action.target, action.cve_id)
+            assert key not in semantic_keys
+            semantic_keys.add(key)
+    assert semantic_keys
+    assert mask[env.flatten_action(4, 0, 0)]
+
+
+def test_noncanonical_flattened_alias_is_penalized_not_repaired():
+    env = FlattenedMaskedPatchCascadeEnv(task_level="easy", seed=3, reward_scale=1.0)
+    env.reset(seed=3)
+    alias = env.flatten_action(4, 1, 0)
+    assert not env.action_masks()[alias]
+    _, _, _, _, info = env.step(alias)
+    assert info["action_valid"] is False
+    assert info["action_target"].startswith("__invalid_flat_action_")
+    assert info["reward_components"]["base"] == pytest.approx(
+        INVALID_ACTION_PENALTY + TIME_PRESSURE_PENALTY
+    )
+
+
+def test_maskable_candidate_runs_and_resumes_one_exact_tiny_update(tmp_path):
+    spec, _ = load_spec(SPEC_PATH)
+    candidate = copy.deepcopy(spec)
+    candidate["algorithm"].update({
+        "name": "MaskablePPO", "rollout_steps": 4, "batch_size": 8,
+        "epochs_per_update": 1, "parallel_environments": 2, "device": "cpu",
+        "architecture": {"policy": [16], "value": [16]},
+    })
+    candidate["environment"]["action_schema_version"] = FLATTENED_ACTION_SCHEMA_VERSION
+    env = make_vec_env(candidate, {"task": "mixed", "tasks": candidate["environment"]["task_levels"]}, 5)
+    model = model_from_spec(candidate, env)
+    model.learn(total_timesteps=8, progress_bar=False)
+    assert model.num_timesteps == 8
+    assert model_algorithm_class(model) == "BoundaryCheckpointMaskablePPO"
+    checkpoint = tmp_path / "masked.zip"
+    model_identity, runtime_identity = save_resumable_checkpoint(model, checkpoint, tmp_path)
+    metadata = {
+        "algorithm": candidate["algorithm"], "total_timesteps": 8,
+        "model_identity": model_identity, "runtime_state_identity": runtime_identity,
+        "safe_boundary": "after-complete-rollout-and-optimizer-update",
+        "algorithm_class": model_algorithm_class(model),
+        "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
+    }
+    env.close()
+    resumed = load_resumable_checkpoint(checkpoint, metadata, tmp_path, "cpu", trusted=True)
+    resumed.learn(total_timesteps=8, reset_num_timesteps=False, progress_bar=False)
+    assert resumed.num_timesteps == 16
+    assert model_algorithm_class(resumed) == "BoundaryCheckpointMaskablePPO"
+    resumed.get_env().close()
+
+
+def test_action_schema_and_algorithm_mismatch_is_rejected(tmp_path):
+    spec, _ = load_spec(SPEC_PATH)
+    bad = copy.deepcopy(spec)
+    bad["environment"]["action_schema_version"] = FLATTENED_ACTION_SCHEMA_VERSION
+    path = tmp_path / "bad-spec.json"
+    path.write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(ReproducibilityError, match="requires algorithm MaskablePPO"):
+        load_spec(path)
 
 
 def test_canonical_dependency_lock_is_exact_and_matches_spec():
@@ -354,7 +469,11 @@ def _artifact_fixture(tmp_path: Path) -> tuple[Path, dict, dict]:
     _write_json(tmp_path / outputs["progress"], {**lock, "status": "trained", "completed_stages": stages, "total_timesteps": total_timesteps})
     (tmp_path / outputs["final_model"]).write_bytes(b"fixture model")
     model_identity = file_identity(tmp_path / outputs["final_model"], relative_to=tmp_path)
-    _write_json(tmp_path / outputs["final_model_metadata"], {**lock, "status": "frozen", "completed_stages": stages, "total_timesteps": total_timesteps, "model_identity": model_identity})
+    _write_json(tmp_path / outputs["final_model_metadata"], {
+        **lock, "status": "frozen", "completed_stages": stages,
+        "total_timesteps": total_timesteps, "model_identity": model_identity,
+        "algorithm_class": "BoundaryCheckpointPPO",
+    })
     event_lines = [
         {"event": "run_created", "run_fingerprint": lock["run_fingerprint"], "source_commit": lock["source_commit"]},
         {"event": "preflight_passed", "run_fingerprint": lock["run_fingerprint"], "source_commit": lock["source_commit"], "report": preflight_identity["path"], "report_sha256": preflight_identity["sha256"]},
@@ -416,6 +535,8 @@ def test_artifact_verifier_accepts_audited_checkpoint_retention_pruning(tmp_path
         "checkpoint": "checkpoints/checkpoint_2048.zip", "checkpoint_sha256": "a" * 64,
         "runtime_state": "checkpoints/checkpoint_2048.runtime.pkl",
         "runtime_state_sha256": "b" * 64,
+        "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
+        "algorithm_class": "BoundaryCheckpointPPO",
         "safe_boundary": "after-complete-rollout-and-optimizer-update",
         "total_timesteps": 2048,
     }
@@ -425,6 +546,8 @@ def test_artifact_verifier_accepts_audited_checkpoint_retention_pruning(tmp_path
         "checkpoint": saved["checkpoint"], "checkpoint_sha256": saved["checkpoint_sha256"],
         "runtime_state": saved["runtime_state"],
         "runtime_state_sha256": saved["runtime_state_sha256"],
+        "runtime_state_format": saved["runtime_state_format"],
+        "algorithm_class": saved["algorithm_class"],
         "reason": "configured-retention-limit",
     }
     with events.open("a", encoding="utf-8") as handle:
@@ -444,11 +567,53 @@ def test_artifact_verifier_rejects_unexplained_missing_checkpoint(tmp_path):
             "checkpoint": "checkpoints/missing.zip", "checkpoint_sha256": "a" * 64,
             "runtime_state": "checkpoints/missing.runtime.pkl",
             "runtime_state_sha256": "b" * 64,
+            "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
+            "algorithm_class": "BoundaryCheckpointPPO",
             "safe_boundary": "after-complete-rollout-and-optimizer-update",
             "total_timesteps": 2048,
         }) + "\n")
     with pytest.raises(ReproducibilityError, match="triplet is incomplete"):
         verify_run(root, SPEC_PATH, load_model=False, enforce_source=False, enforce_runtime=False)
+
+
+def test_artifact_verifier_hashes_runtime_state_without_deserializing(monkeypatch, tmp_path):
+    import cloudpickle
+
+    root, spec, lock = _artifact_fixture(tmp_path)
+    checkpoint_dir = root / "checkpoints"
+    checkpoint_dir.mkdir()
+    model = checkpoint_dir / "checkpoint_2048.zip"
+    runtime = checkpoint_dir / "checkpoint_2048.runtime.pkl"
+    metadata = checkpoint_dir / "checkpoint_2048.metadata.json"
+    model.write_bytes(b"opaque model archive")
+    runtime.write_bytes(b"not deserialized by verifier")
+    model_identity = file_identity(model, relative_to=root)
+    runtime_identity = file_identity(runtime, relative_to=root)
+    _write_json(metadata, {
+        **lock, "stage_index": 0, "stage": spec["methodology"]["stages"][0],
+        "stage_timesteps_completed": 2048, "total_timesteps": 2048,
+        "model_identity": model_identity, "runtime_state_identity": runtime_identity,
+        "safe_boundary": "after-complete-rollout-and-optimizer-update",
+        "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
+        "algorithm_class": "BoundaryCheckpointPPO",
+    })
+    with (root / spec["outputs"]["events"]).open("a", encoding="utf-8") as handle:
+        handle.write(canonical_json({
+            "event": "checkpoint_saved", "stage": "easy",
+            "run_fingerprint": lock["run_fingerprint"], "source_commit": lock["source_commit"],
+            "checkpoint": model_identity["path"], "checkpoint_sha256": model_identity["sha256"],
+            "runtime_state": runtime_identity["path"], "runtime_state_sha256": runtime_identity["sha256"],
+            "runtime_state_format": TRUSTED_RUNTIME_STATE_FORMAT,
+            "algorithm_class": "BoundaryCheckpointPPO",
+            "safe_boundary": "after-complete-rollout-and-optimizer-update", "total_timesteps": 2048,
+        }) + "\n")
+
+    def forbidden_deserialize(*_args, **_kwargs):
+        raise AssertionError("verifier attempted executable deserialization")
+
+    monkeypatch.setattr(cloudpickle, "load", forbidden_deserialize)
+    result = verify_run(root, SPEC_PATH, load_model=False, enforce_source=False, enforce_runtime=False)
+    assert result["valid"] is True
 
 
 def test_artifact_verifier_rejects_partial_evaluation(tmp_path):

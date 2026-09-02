@@ -60,13 +60,18 @@ from grader import grade_episode
 from models import ActionType, PatchCascadeAction, PatchCascadeObservation, NodeState, CriticalityTier
 from training_repro import (
     ReproducibilityError, canonical_json, file_identity, git_metadata, load_spec,
-    run_fingerprint, spec_hash,
+    run_fingerprint, spec_hash, spec_reference,
 )
 
 # Agent imports
 try:
+    from sb3_contrib import MaskablePPO
     from stable_baselines3 import PPO
-    from gym_wrapper import PatchCascadeGymEnv
+    from gym_wrapper import (
+        FLATTENED_ACTION_SCHEMA_VERSION,
+        FlattenedMaskedPatchCascadeEnv,
+        PatchCascadeGymEnv,
+    )
     HAS_SB3 = True
 except ImportError:
     HAS_SB3 = False
@@ -238,7 +243,8 @@ class HeuristicAgent(BaseAgent):
 class RLAgent(BaseAgent):
     """Wrapper for trained SB3 models."""
     def __init__(self, model_path: str, env: PatchCascadeGymEnv):
-        self.model = PPO.load(model_path)
+        self.masked = isinstance(env, FlattenedMaskedPatchCascadeEnv)
+        self.model = (MaskablePPO if self.masked else PPO).load(model_path)
         self.env = env
         self.agent_name = "ppo"
         if self.model.observation_space != env.observation_space or self.model.action_space != env.action_space:
@@ -251,7 +257,8 @@ class RLAgent(BaseAgent):
         # RLAgent uses the Gym wrapper's encoding
         self.env.sync_observation(obs)
         obs_array = self.env._encode_observation(obs)
-        action_idx, _ = self.model.predict(obs_array, deterministic=True)
+        predict_kwargs = {"action_masks": self.env.action_masks()} if self.masked else {}
+        action_idx, _ = self.model.predict(obs_array, deterministic=True, **predict_kwargs)
         return self.env._decode_action(action_idx)
 
 
@@ -479,7 +486,12 @@ def main():
         raise ReproducibilityError("Unknown task level")
     agents: list[BaseAgent] = [RandomAgent(), HeuristicAgent()]
     if args.rl_model and not args.baseline_only:
-        agents.append(RLAgent(args.rl_model, PatchCascadeGymEnv()))
+        env_class = (
+            FlattenedMaskedPatchCascadeEnv
+            if spec["environment"]["action_schema_version"] == FLATTENED_ACTION_SCHEMA_VERSION
+            else PatchCascadeGymEnv
+        )
+        agents.append(RLAgent(args.rl_model, env_class()))
     results: list[BenchmarkResult] = []
     for task in tasks:
         for agent in agents:
@@ -505,7 +517,7 @@ def main():
     payload = {
         "schema_version": 1, "status": "complete",
         "config": {
-            "split": args.split, "spec_path": resolved_spec.relative_to(PROJECT_ROOT).as_posix(), "source_commit": git["commit"],
+            "split": args.split, "spec_path": spec_reference(resolved_spec), "source_commit": git["commit"],
             "run_fingerprint": args.run_fingerprint, "seeds": seeds, "tasks": tasks,
             "max_steps_by_task": spec["evaluation"]["max_steps_by_task"],
             "bootstrap_samples": spec["evaluation"]["bootstrap_samples"],

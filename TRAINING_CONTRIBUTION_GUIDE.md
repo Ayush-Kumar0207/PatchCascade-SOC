@@ -34,14 +34,25 @@ the repository spec, while errors stop before GPU time is spent.
    python tools/training_preflight.py --spec training_specs/canonical_v1.json
    ```
 
-## One canonical training command
+   This is diagnostic while the provisional baseline is unauthorized. Running
+   `train_canonical.py` with that baseline stops before training. When campaign
+   compute is explicitly authorized in a reviewed commit, contributors run only:
+
+   ```bash
+   python tools/run_model_selection.py --campaign-dir /persistent/path/patchcascade-selection
+   ```
+
+   The orchestrator supplies all candidate specs, budgets, seeds, validation
+   settings, ranking, automatic resume, and durable decisions.
+
+## One final training command (after selection and freeze)
 
 Choose a new empty persistent directory **outside the source checkout**, then run:
 
 ```bash
 python train_canonical.py \
-  --spec training_specs/canonical_v1.json \
-  --run-dir /persistent/path/patchcascade-canonical-v1
+  --spec training_specs/<reviewed-selected-spec>.json \
+  --run-dir /persistent/path/patchcascade-final-selected
 ```
 
 The command reruns preflight (including a CPU exact-shape PPO update), persists
@@ -50,8 +61,16 @@ all frozen stages, records SB3 diagnostics, checkpoints at the first completed
 PPO update boundary after each 5,000 timesteps, resumes compatible interruptions,
 rejects foreign checkpoints, and runs only the validation split. A checkpoint
 includes hashed Python/NumPy/Torch/CUDA/vector-worker/environment/MixedTask state
-that normal SB3 saves omit. Rerun the identical command after a disconnect. Never edit a
+that normal SB3 saves omit. The six-process CPU proof covers four vector workers,
+mixed-task continuation, and an easy→mixed stage boundary; it does not claim
+bitwise equivalence across GPU stacks. Rerun the identical command after a disconnect. Never edit a
 run lock or point a new experiment at the old directory.
+
+Runtime `.pkl` sidecars are executable trusted-run material. Do not resume a
+downloaded contributor checkpoint on a maintainer machine. Verification hashes
+them without deserialization; resume only your own run, or use a disposable
+credential-free isolated environment after audit. See
+[`RUNTIME_STATE_SECURITY.md`](RUNTIME_STATE_SECURITY.md).
 
 ## Frozen evaluation and verification
 
