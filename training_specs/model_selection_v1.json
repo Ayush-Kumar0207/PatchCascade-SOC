@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "campaign_id": "patchcascade-validation-selection-v1",
-  "status": "preregistered-no-results-compute-not-authorized",
+  "status": "preregistered-compute-authorized",
   "data_policy": {
     "allowed_splits": ["training", "validation"],
     "forbidden_splits": ["canonical_test", "confirmation_test"],

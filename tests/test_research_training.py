@@ -174,9 +174,12 @@ def test_model_selection_resume_rejects_altered_campaign_identity(tmp_path):
         run_selection_campaign(campaign, synthetic_fixture=True)
 
 
-def test_model_selection_real_compute_is_fail_closed_while_unauthorized(tmp_path):
-    with pytest.raises(ReproducibilityError, match="compute is not authorized"):
-        run_selection_campaign(tmp_path / "forbidden-real-selection")
+def test_model_selection_authorizes_only_preregistered_development_compute():
+    protocol = json.loads((ROOT / "training_specs/model_selection_v1.json").read_text(encoding="utf-8"))
+    assert protocol["status"] == "preregistered-compute-authorized"
+    assert protocol["data_policy"]["allowed_splits"] == ["training", "validation"]
+    assert protocol["data_policy"]["forbidden_splits"] == ["canonical_test", "confirmation_test"]
+    assert protocol["freeze_policy"]["selected_spec_must_be_committed_before_held_out_evaluation"] is True
 
 
 def test_environment_compatibility_versions_match_frozen_spec():
