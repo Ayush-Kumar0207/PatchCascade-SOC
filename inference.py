@@ -3,7 +3,7 @@
 PatchCascade SOC - Inference Script
 ====================================
 
-Baseline LLM evaluation script for the Meta PyTorch OpenEnv Hackathon.
+Baseline LLM evaluation script for the PatchCascade OpenEnv environment.
 Connects an LLM agent to the PatchCascade SOC environment and logs
 results in the required standardized format.
 
@@ -219,7 +219,7 @@ def compute_normalized_score(rewards: list[float]) -> float:
     """
     Compute normalized score strictly in (0, 1) from raw rewards.
     
-    Hackathon validator requires scores strictly between 0 and 1
+    The OpenEnv result contract requires scores strictly between 0 and 1
     (not 0.0 and not 1.0).
     """
     total_reward = sum(rewards)
@@ -329,7 +329,7 @@ async def run_inference() -> None:
     easy -> medium -> hard. Each task produces its own [START]/[END] block.
     
     When TASK_LEVEL is a specific level, runs only that task.
-    This ensures the hackathon validator sees grading output for all 3 tasks.
+    This ensures protocol validators see grading output for all 3 tasks.
     """
     # Determine which tasks to run
     if TASK_LEVEL == "all":

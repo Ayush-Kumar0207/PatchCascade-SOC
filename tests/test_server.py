@@ -192,7 +192,7 @@ class TestObservationEndpoint:
 
 
 class TestTasksEndpoint:
-    """Test the /tasks endpoint — critical for hackathon validation."""
+    """Test the /tasks endpoint — critical for OpenEnv protocol validation."""
 
     def test_list_tasks(self, client):
         """GET /tasks should return all 5 tasks."""

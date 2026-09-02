@@ -374,7 +374,7 @@ async def get_schemas() -> dict:
 
 
 # =============================================================================
-# TASKS & GRADERS ENDPOINTS (Required for hackathon Phase 2 validation)
+# TASKS & GRADERS ENDPOINTS (Required for OpenEnv protocol validation)
 # =============================================================================
 
 
@@ -398,7 +398,7 @@ async def get_tasks_endpoint() -> dict:
     Get list of available tasks with their graders.
 
     This endpoint explicitly lists all tasks and their associated graders
-    for hackathon validation compliance.
+    for OpenEnv protocol compliance.
     """
     all_tasks = list_tasks()
     serialized = [_serialize_task(t) for t in all_tasks]

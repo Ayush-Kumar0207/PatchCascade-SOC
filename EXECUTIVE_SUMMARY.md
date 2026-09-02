@@ -68,4 +68,4 @@ python train_rl.py --task easy --steps 10000  # Train a PPO agent
 
 ---
 
-*Built for the Meta × PyTorch OpenEnv Hackathon 2026 by Ayush Kumar & Ravi Prashant*
+*Open-source cybersecurity RL research by Ayush Kumar & Ravi Prashant*

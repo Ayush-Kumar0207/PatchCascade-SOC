@@ -24,9 +24,9 @@ No coding experience required!
 📖 Reading Time    ~60 minutes (grab a coffee ☕)
 🎯 Goal            Understand every part of the project — deeply
 👤 For             Anyone curious about the project
-🏆 Context         Meta PyTorch OpenEnv Hackathon 2026 — Bangalore Finals
+🔬 Context         OpenEnv-compatible cybersecurity RL research
 📝 Authors         Ayush Kumar & Ravi Prashant
-🔖 Version         2.0.0 (Upgraded for Hackathon Finals)
+🔖 Version         2.0.0 (Research release)
 ```
 
 ---
@@ -35,7 +35,7 @@ No coding experience required!
 
 Hey there! 👋
 
-Welcome to the **complete beginner's guide** to PatchCascade SOC — upgraded and expanded for the **Meta PyTorch OpenEnv Hackathon 2026 Finals in Bangalore**.
+Welcome to the **complete beginner's guide** to PatchCascade SOC — an OpenEnv-compatible reinforcement-learning environment for autonomous security patching.
 
 Since you're reading this, you're probably curious about one of these things:
 
@@ -576,7 +576,7 @@ Here's what **every single file** in our upgraded project does:
 │ (303 lines)           │ Heuristic agent runs all 5 tasks │ 5 levels without needing an LLM  │
 ├───────────────────────┼──────────────────────────────────┼──────────────────────────────────┤
 │ openenv.yaml (308!)   │ Full OpenEnv specification       │ The ID card — tells the          │
-│                       │ Tasks, graders, schemas, events  │ hackathon exactly who we are     │
+│                       │ Tasks, graders, schemas, events  │ tooling exactly who we are       │
 ├───────────────────────┼──────────────────────────────────┼──────────────────────────────────┤
 │ Dockerfile            │ Container build instructions     │ The recipe book — how to set     │
 │                       │ With health checks               │ things up anywhere               │
@@ -1604,7 +1604,7 @@ Here's what happens when the AI agent makes a decision. Follow the numbered arro
   • API connection fails?    → Retry with longer wait
   • All retries exhausted?   → Fallback to NOOP (safe do-nothing)
   • Any unexpected error?    → Script NEVER crashes (exit code = 0)
-     (This is critical for the hackathon validator!)
+     (This is critical for reliable automated validation!)
 ```
 
 ### 📝 The System Prompt
@@ -1647,9 +1647,9 @@ for each task_level in ["easy", "medium", "hard", "incident_response", "zero_day
     print("[END] success={bool} steps={n} score={s}")
 ```
 
-### 📊 Output Format (Hackathon Standard)
+### 📊 Output Format (OpenEnv Interface)
 
-The inference script produces output in a **strict format** required by the hackathon validator:
+The inference script produces output in a **strict format** required by the OpenEnv validation tooling:
 
 ```
 [START] task=easy env=patchcascade model=Qwen/Qwen2.5-72B-Instruct
@@ -1940,7 +1940,7 @@ $ python smoke_test.py
    ✅ PASS — All modules import successfully
 
 ======================================================================
-  ✅ ALL CHECKS PASSED — Submission is ready!
+  ✅ ALL CHECKS PASSED — Deployment is ready!
 ======================================================================
 ```
 
@@ -2042,7 +2042,7 @@ These trade-offs are complex. It's easier to let the AI learn through experience
 
 ### ❓ "What's 'OpenEnv' and why do we care?"
 
-OpenEnv is a **standard protocol** created for the Meta PyTorch Hackathon. It defines:
+OpenEnv is a **standard protocol** for interoperable agent-environment evaluation. It defines:
 - How agents and environments communicate
 - What format the messages should be in
 - What endpoints to expose
@@ -2200,7 +2200,7 @@ Our **Live Command Center** changes that. It's a premium, dark-themed web interf
 
 You'll see the AI methodically patching servers, managing downtime, and avoiding cascades—all visualized with beautiful animations and neon glow effects.
 
-> 🏆 **Hackathon Tip:** This dashboard is our secret weapon. It proves that our project isn't just "vibe coding"—it's a working, professional-grade solution that anyone can understand at a glance.
+> 🔬 **Research demo note:** This dashboard makes the environment's behavior, state transitions, and agent decisions understandable at a glance.
 
 ---
 
@@ -2237,7 +2237,7 @@ You'll see the AI methodically patching servers, managing downtime, and avoiding
 │ LLM                    │ Large Language Model (like ChatGPT, Qwen)         │
 │ Multi-Dimensional      │ Scoring across multiple independent dimensions     │
 │ NOOP                   │ "No operation" — do nothing this turn              │
-│ OpenEnv                │ The standard protocol for this hackathon           │
+│ OpenEnv                │ Standard agent-environment interoperability protocol│
 │ Patch                  │ A software fix for a vulnerability                 │
 │ Penalty                │ Bad points (we want to minimize this)              │
 │ Potential-Based Shaping│ Reward = improvement in penalty each turn          │
@@ -2292,10 +2292,10 @@ You've made it to the end of this **epic guide!** You now understand:
  7. Multi-dimensional grading captures HOW an agent succeeds, not just IF
  8. 5 difficulty levels form a complete training curriculum
  9. LLM-native design (JSON + semantic descriptions) enables zero-shot play
-10. OpenEnv compliance means our project works with the hackathon ecosystem
+10. OpenEnv compliance makes the project interoperable with OpenEnv tooling
 ```
 
-### 🏆 Why We're Ready for Bangalore
+### 🔬 Why the Project Is Research-Ready
 
 Our project isn't just a demo — it's **production-grade RL infrastructure**:
 - **1,821 lines** of environment logic
@@ -2305,7 +2305,7 @@ Our project isn't just a demo — it's **production-grade RL infrastructure**:
 - **3 dynamic event systems** (exploit spreading, zero-day, degradation)
 - **Comprehensive test suite** with heuristic smoke testing
 - **Premium Live Dashboard** with D3.js topology and real-time metrics
-- **Full OpenEnv compliance** for seamless hackathon validation
+- **Full OpenEnv compliance** for portable automated validation
 
 ---
 
@@ -2316,7 +2316,7 @@ Feel free to ask us anything!
 
 Created by Ayush Kumar & Ravi Prashant
 PatchCascade SOC Team
-Meta PyTorch OpenEnv Hackathon 2026 — Bangalore Finals
+OpenEnv-compatible research release
 
 "Train smarter. Patch faster. Crash never." 🛡️
 ```

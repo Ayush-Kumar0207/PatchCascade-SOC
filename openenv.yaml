@@ -1,7 +1,7 @@
 # =============================================================================
 # PatchCascade SOC - OpenEnv Configuration
 # =============================================================================
-# OpenEnv spec_version 1 compliant configuration for the Meta PyTorch Hackathon.
+# OpenEnv spec_version 1 compliant configuration.
 # Features 5 progressive tasks with multi-dimensional programmatic graders.
 # =============================================================================
 
@@ -38,7 +38,7 @@ license: "Apache-2.0"
 repository: "https://github.com/Ayush-Kumar0207/PatchCascade-SOC"
 
 # =============================================================================
-# Grader Module (Required for hackathon: programmatic graders)
+# Grader Module (programmatic OpenEnv graders)
 # =============================================================================
 grader_module: grader
 grader_class: TaskGrader
@@ -304,4 +304,3 @@ tags:
   - json-action
   - llm-agent
   - multi-dimensional-grading
-  - hackathon

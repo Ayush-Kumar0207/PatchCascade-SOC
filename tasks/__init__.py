@@ -27,7 +27,7 @@ Task Curriculum (5 levels, progressive difficulty):
        10 nodes, dynamic CVE injection at turns 5 and 15.
        Tests adaptive planning and strategy revision under uncertainty.
 
-Required by OpenEnv hackathon validation: at least 3 tasks with graders.
+OpenEnv protocol validation requires at least 3 tasks with graders.
 We provide 5 graders for comprehensive evaluation.
 
 Author: PatchCascade SOC Team
