@@ -18,7 +18,7 @@ This design enables nuanced evaluation:
 - An agent that causes cascades but recovers scores ~0.4
 - A random agent scores ~0.1-0.2
 
-Required by OpenEnv hackathon validation: at least 3 tasks with graders.
+OpenEnv protocol validation requires at least 3 tasks with graders.
 We provide 5 graders for comprehensive evaluation.
 
 Author: PatchCascade SOC Team
@@ -185,7 +185,7 @@ class TaskGrader:
             + w.strategy * strategy
         )
 
-        # Clamp to open interval (0, 1) — hackathon validator requirement
+        # Clamp to open interval (0, 1) — OpenEnv result-contract requirement
         composite = max(0.001, min(0.999, composite))
 
         # Determine pass/fail

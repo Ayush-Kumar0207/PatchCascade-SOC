@@ -27,10 +27,6 @@ tags:
 
 [Quick Start](#-quick-start) • [The Challenge](#-the-challenge) • [Architecture](#-architecture) • [Grading Logic](#-multi-dimensional-grading) • [API Reference](#-api-reference) • [Contributors](#-contributors)
 
----
-
-🏆 **Meta PyTorch OpenEnv Hackathon 2026 Submission**
-
 </div>
 
 ---
@@ -428,10 +424,10 @@ export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
 python inference.py
 ```
 
-### Validate Your Submission
+### Validate a Deployed Space
 
 ```bash
-bash validate-submission.sh https://your-space.hf.space
+bash validate-deployment.sh https://your-space.hf.space
 ```
 
 ### 🎬 Sample Interaction
@@ -704,7 +700,6 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
-- **Meta AI** — For hosting the PyTorch OpenEnv Hackathon
 - **Hugging Face** — For Spaces infrastructure
 - **OpenEnv Community** — For the standardized RL environment protocol
 

@@ -15,7 +15,7 @@ httpx>=0.26.0
 # LLM client (for inference.py)
 openai>=1.10.0
 
-# OpenEnv core (required for hackathon validation)
+# OpenEnv core (required for protocol compatibility)
 openenv-core>=0.2.0
 
 # RL training stack (Gymnasium + Stable-Baselines3)

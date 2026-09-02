@@ -5,7 +5,7 @@ PatchCascade SOC — Benchmarking & Evaluation System
 
 Systematically evaluates and compares different agents across all 5
 PatchCascade task levels. Generates the 'Source of Truth' comparison
-table for the hackathon submission.
+table for reproducible policy comparison.
 
 Agents compared:
 1. Random (Baseline)
