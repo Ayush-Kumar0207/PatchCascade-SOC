@@ -35,22 +35,65 @@ def validate() -> dict[str, object]:
         raise ValueError("model-selection candidate bound is invalid")
     if len({item["id"] for item in candidates}) != len(candidates):
         raise ValueError("model-selection candidate IDs are duplicated")
+    fixed = search["fixed"]
+    if (
+        fixed.get("action_interface_source") != "interface_decision.json"
+        or fixed.get("algorithm_source") != "interface_decision.json"
+        or "action_interface" in fixed
+        or "algorithm" in fixed
+    ):
+        raise ValueError("hyperparameter selection must consume the mechanical interface decision")
     rounds = selection["successive_halving"]
     if [item["candidate_count"] for item in rounds] != [8, 3, 2] or [item["advance"] for item in rounds] != [3, 2, 1]:
         raise ValueError("successive-halving topology drifted")
     if selection["freeze_policy"]["selected_spec_required_status"] != "frozen-final-selected":
         raise ValueError("final selected-spec status is not fail closed")
-    interfaces = selection["action_interface_investigation"]["interfaces"]
+    interface_stage = selection["action_interface_selection"]
+    interfaces = interface_stage["interfaces"]
     if [item["id"] for item in interfaces] != ["multidiscrete-ppo", "flattened-discrete-maskableppo"]:
         raise ValueError("predeclared action-interface comparison drifted")
+    baseline_interface = interfaces[0]
+    if (
+        baseline_interface.get("algorithm") != "PPO"
+        or baseline_interface.get("action_schema_version") != "multidiscrete-v2-joint-validity-penalized"
+        or baseline_interface.get("complexity_priority") != 1
+    ):
+        raise ValueError("MultiDiscrete PPO interface contract is incomplete")
     masked = interfaces[1]
     if (
         masked.get("status") != "implemented-contract-tested-no-comparison-results"
         or masked.get("algorithm") != "MaskablePPO"
         or masked.get("action_schema_version") != "discrete-v1-state-masked-joint-validity"
         or masked.get("dependency") != "sb3-contrib==2.8.0"
+        or masked.get("complexity_priority") != 2
     ):
         raise ValueError("flattened MaskablePPO candidate contract is incomplete")
+    paired = interface_stage.get("paired_comparison", {})
+    if (
+        interface_stage.get("status") != "preregistered-interface-first-no-results"
+        or interface_stage.get("order") != "interface-first-then-hyperparameter-selection-on-the-mechanical-winner"
+        or interface_stage.get("training_seeds") != policy["training_seeds"]
+        or interface_stage.get("validation_seeds") != policy["validation_seeds"]
+        or interface_stage.get("task_levels") != canonical["environment"]["task_levels"]
+        or interface_stage.get("timesteps_per_stage") != 10240
+        or interface_stage.get("reference_hyperparameters") != {
+            "learning_rate": 0.0003,
+            "entropy_coefficient": 0.01,
+            "network": [256, 256],
+        }
+        or interface_stage.get("safety_eligibility") != [
+            "zero_catastrophic_failures", "zero_cascade_failures", "zero_invalid_actions"
+        ]
+        or paired.get("unit") != ["training_seed", "task_level", "validation_seed"]
+        or paired.get("bootstrap_samples") != 5000
+        or paired.get("bootstrap_seed") != 5785238022979748179
+        or paired.get("require_complete_identical_pair_keys") is not True
+        or paired.get("criterion_for_more_complex_interface")
+        != "lower_95pct_bootstrap_bound_above_zero_on_every_task"
+        or interface_stage.get("no_manual_override_after_results") is not True
+        or interface_stage.get("decision_file") != "interface_decision.json"
+    ):
+        raise ValueError("interface-first paired selection contract is incomplete")
     if selection["selection_rule"]["safety_eligibility"] != [
         "zero_catastrophic_failures", "zero_cascade_failures", "zero_invalid_actions"
     ]:
@@ -60,6 +103,8 @@ def validate() -> dict[str, object]:
         orchestration.get("entrypoint") != "tools/run_model_selection.py"
         or orchestration.get("real_execution_requires_status") != "preregistered-compute-authorized"
         or orchestration.get("synthetic_fixture_is_never_evidence") is not True
+        or orchestration.get("interface_decision") != "interface_decision.json"
+        or orchestration.get("interface_decision_hash_bound_to_generated_specs") is not True
     ):
         raise ValueError("model-selection orchestration contract is incomplete")
     return {

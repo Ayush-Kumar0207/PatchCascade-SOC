@@ -619,6 +619,10 @@ Scores are composite (Completion × Efficiency × Safety × Strategy), normalize
 > [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) produces a new,
 > reviewed `frozen-final-selected` spec. Expensive contributor training is not
 > currently authorized.
+> The locked runner first performs an equal-budget, paired validation-only
+> MultiDiscrete PPO versus MaskablePPO decision, then applies the bounded
+> hyperparameter campaign to the mechanical winner; neither interface has a
+> claimed result in this PR.
 
 ### 🏋️ Train Your Own Agent
 

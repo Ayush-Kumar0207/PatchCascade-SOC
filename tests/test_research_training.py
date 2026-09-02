@@ -40,7 +40,11 @@ from training_repro import (
 from tools.verify_training_artifacts import verify_run
 from tools.run_evaluation import run_evaluation
 from tools.validate_model_selection import validate as validate_model_selection
-from tools.run_model_selection import orchestrate as run_selection_campaign
+from tools.run_model_selection import (
+    orchestrate as run_selection_campaign,
+    select_interface,
+    synthetic_interface_record,
+)
 from train_canonical import (
     TRUSTED_RUNTIME_STATE_FORMAT,
     load_resumable_checkpoint,
@@ -120,7 +124,54 @@ def test_model_selection_orchestrator_is_deterministic_resumable_and_safety_firs
     proposal = json.loads((campaign / "proposed_final_spec.json").read_text(encoding="utf-8"))
     assert decision["manual_override"] is False
     assert proposal["status"] == "synthetic-fixture-not-evidence"
-    assert proposal["selection_evidence"]["action_interface_decision_required"] is True
+    assert proposal["selection_evidence"]["action_interface_decision_required"] is False
+    assert proposal["selection_evidence"]["selected_interface"] == "flattened-discrete-maskableppo"
+    assert proposal["selection_evidence"]["interface_decision_sha256"] == hashlib.sha256(
+        (campaign / "interface_decision.json").read_bytes()
+    ).hexdigest()
+    assert proposal["selection_identity"]["interface_decision_sha256"] == proposal["selection_evidence"]["interface_decision_sha256"]
+    assert proposal["algorithm"]["name"] == "MaskablePPO"
+    assert proposal["environment"]["action_schema_version"] == FLATTENED_ACTION_SCHEMA_VERSION
+    interface = json.loads((campaign / "interface_decision.json").read_text(encoding="utf-8"))
+    assert interface["manual_override"] is False
+    assert interface["held_out_splits_used"] is False
+    assert all(
+        row["bootstrap_ci95"][0] > 0
+        for row in interface["paired_maskable_minus_multidiscrete"].values()
+    )
+    interface["selected_interface"] = "multidiscrete-ppo"
+    (campaign / "interface_decision.json").write_text(json.dumps(interface), encoding="utf-8")
+    with pytest.raises(ReproducibilityError, match="changed identity"):
+        run_selection_campaign(campaign, synthetic_fixture=True)
+
+
+def test_interface_selection_is_paired_and_defaults_to_simpler_without_uniform_advantage():
+    protocol = json.loads(Path("training_specs/model_selection_v1.json").read_text(encoding="utf-8"))
+    stage = protocol["action_interface_selection"]
+    records = [
+        synthetic_interface_record(interface, protocol, seed)
+        for interface in stage["interfaces"]
+        for seed in stage["training_seeds"]
+    ]
+    for record in records:
+        if record["interface_id"] == "flattened-discrete-maskableppo":
+            for score in record["metrics"]["paired_validation_scores"]:
+                if score["task_level"] == "hard":
+                    score["score"] -= 0.06
+    decision = select_interface(protocol, records)
+    assert decision["selected_interface"] == "multidiscrete-ppo"
+    assert decision["reason"] == "both-safe-no-uniform-paired-advantage-default-to-lower-complexity"
+
+
+def test_model_selection_resume_rejects_altered_campaign_identity(tmp_path):
+    campaign = tmp_path / "selection-tamper"
+    run_selection_campaign(campaign, synthetic_fixture=True)
+    state_path = campaign / "campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["campaign_fingerprint"] = "altered"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    with pytest.raises(ReproducibilityError, match="another source/protocol identity"):
+        run_selection_campaign(campaign, synthetic_fixture=True)
 
 
 def test_model_selection_real_compute_is_fail_closed_while_unauthorized(tmp_path):

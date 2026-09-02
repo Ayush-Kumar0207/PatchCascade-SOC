@@ -42,8 +42,13 @@ the repository spec, while errors stop before GPU time is spent.
    python tools/run_model_selection.py --campaign-dir /persistent/path/patchcascade-selection
    ```
 
-   The orchestrator supplies all candidate specs, budgets, seeds, validation
-   settings, ranking, automatic resume, and durable decisions.
+   The orchestrator first gives MultiDiscrete PPO and MaskablePPO identical
+   reference hyperparameters, budgets, training seeds, and validation episodes;
+   it applies the preregistered safety gates and per-task paired-bootstrap rule,
+   writes `interface_decision.json`, and only then runs the bounded 8→3→2→1
+   hyperparameter campaign on that mechanical winner. It supplies every candidate
+   spec, path, budget, seed, validation setting, rank, automatic resume identity,
+   and durable decision. There is no manual post-result interface override.
 
 ## One final training command (after selection and freeze)
 
