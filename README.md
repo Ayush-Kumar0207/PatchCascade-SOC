@@ -31,6 +31,24 @@ tags:
 
 ---
 
+## Research compute contributors wanted
+
+The frozen development/model-selection protocol is authorized for independent
+external execution. [Claim a PatchCascade compute run](https://github.com/Ayush-Kumar0207/PatchCascade-SOC/issues/2)
+· [Read the contributor guide](TRAINING_CONTRIBUTION_GUIDE.md)
+· [Read the frozen protocol](MODEL_SELECTION_PROTOCOL.md)
+
+- **Question:** does a flattened Discrete + MaskablePPO interface outperform the
+  simpler MultiDiscrete PPO interface across all five cyber-resilience tasks, and
+  which preregistered configuration survives paired 8→3→2→1 selection?
+- **Needed:** stable Python 3.11 compute, the exact dependency stack, persistent
+  storage, or an independent evidence reviewer; no GPU/VRAM minimum is claimed.
+- **One command after qualification:** `python tools/run_model_selection.py --campaign-dir /persistent/path/patchcascade-selection`
+- **Boundary:** interfaces, candidates, seeds, budgets, safety gates, paired ranking,
+  and survivor decisions are frozen; final, canonical, and confirmation work remains sealed.
+- **Credit:** accepted substantive contributions receive permanent public technical
+  attribution. Authorship is contribution-dependent and never promised for compute alone.
+
 ## 🔬 Research Motivation
 
 Modern enterprise networks face a critical unsolved problem: **how to autonomously patch security vulnerabilities without causing service outages**. This is a fundamentally sequential decision-making problem with:
