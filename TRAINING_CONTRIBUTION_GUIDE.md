@@ -3,12 +3,14 @@
 The safe workflow is intentionally easy to execute correctly: values come from
 the repository spec, while errors stop before GPU time is spent.
 
-> **Current review state:** expensive contributor training is not authorized.
-> `canonical_v1.json` is a provisional corrected baseline, not the highest-quality
-> final experiment. Complete the bounded validation-only protocol in
-> [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md), then commit the
-> selected configuration as a new `frozen-final-selected` spec before opening
-> canonical or confirmation seeds.
+> **Current state:** development/model-selection compute is authorized by the
+> committed `model_selection_v1.json` status `preregistered-compute-authorized`.
+> External compute and reproducibility contributors are being recruited now.
+>
+> **Still sealed:** `canonical_v1.json` remains a provisional corrected baseline,
+> not the final experiment. Final training plus canonical and confirmation
+> evaluation remain unauthorized until the bounded selection campaign finishes and
+> a separate reviewed `frozen-final-selected` spec is committed.
 
 ## Before compute
 
@@ -34,9 +36,9 @@ the repository spec, while errors stop before GPU time is spent.
    python tools/training_preflight.py --spec training_specs/canonical_v1.json
    ```
 
-   This is diagnostic while the provisional baseline is unauthorized. Running
-   `train_canonical.py` with that baseline stops before training. When campaign
-   compute is explicitly authorized in a reviewed commit, contributors run only:
+   This qualifies the exact environment while final training remains sealed.
+   Running `train_canonical.py` with the provisional baseline stops before training.
+   The authorized development campaign uses only:
 
    ```bash
    python tools/run_model_selection.py --campaign-dir /persistent/path/patchcascade-selection
@@ -49,6 +51,30 @@ the repository spec, while errors stop before GPU time is spent.
    hyperparameter campaign on that mechanical winner. It supplies every candidate
    spec, path, budget, seed, validation setting, rank, automatic resume identity,
    and durable decision. There is no manual post-result interface override.
+
+The repository does not encode a minimum GPU model or VRAM threshold for this
+campaign. It requires Python 3.11, the exact declared dependencies, at least 2 GiB
+free disk at preflight, stable compute, and persistent campaign storage. Report the
+actual CPU/GPU, RAM/VRAM, platform, and expected interruptions when claiming the
+run; compatibility is established by repository preflight, not by a guessed
+hardware promise.
+
+## Choose a contribution track
+
+- **Track A — environment/preflight verifier:** reproduce the exact dependency,
+  environment, optimizer-shape, and six-process resume-equivalence checks. This is
+  a small commitment and does not claim a campaign result.
+- **Track B — development compute contributor:** run the authorized interface-first
+  and 8→3→2→1 development campaign and return the complete evidence directory.
+- **Track C — independent artifact/reproducibility reviewer:** verify campaign
+  identity, paired-interface evidence, completeness, resume lineage, gates, and
+  decisions without choosing results or opening held-out splits.
+- **Track D — research contributor:** propose substantive methodology, analysis,
+  or writing as a separately reviewed contribution under a new experiment identity.
+
+Tracks A–C receive public technical credit appropriate to accepted work but do not
+carry promised authorship. Authorship, if a manuscript results, follows actual
+scholarly contribution and the applicable venue/authorship standards.
 
 ## One final training command (after selection and freeze)
 
