@@ -617,8 +617,8 @@ Scores are composite (Completion × Efficiency × Safety × Strategy), normalize
 > corrected provisional baseline, not the final highest-quality experiment.
 > Held-out seeds remain sealed until the bounded validation-only process in
 > [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) produces a new,
-> reviewed `frozen-final-selected` spec. Expensive contributor training is not
-> currently authorized.
+> reviewed `frozen-final-selected` spec. Only the frozen development/model-selection
+> campaign is currently authorized; final, canonical, and confirmation compute are not.
 > The locked runner first performs an equal-budget, paired validation-only
 > MultiDiscrete PPO versus MaskablePPO decision, then applies the bounded
 > hyperparameter campaign to the mechanical winner; neither interface has a

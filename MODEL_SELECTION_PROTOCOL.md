@@ -2,8 +2,9 @@
 
 `canonical_v1.json` is a corrected, frozen **provisional baseline**. Its 122,880
 timesteps are not claimed to be the highest-quality configuration, and its held-out
-canonical/confirmation seeds are intentionally blocked. Expensive compute remains
-unauthorized in this PR.
+canonical/confirmation seeds are intentionally blocked. The separately reviewed
+authorization permits only the frozen development/model-selection campaign; final,
+canonical, and confirmation compute remain unauthorized.
 
 The machine-readable preregistration is
 [`training_specs/model_selection_v1.json`](training_specs/model_selection_v1.json).
@@ -14,8 +15,8 @@ confirmation seeds remain inaccessible to selection.
 candidate spec, seed, budget, path, resume identity, safety decision, rank, and
 survivor from the preregistration. A campaign directory is locked to source and
 protocol hashes; reruns revalidate existing evidence and resume the same candidate
-run. It refuses real compute while the committed protocol status says
-`preregistered-no-results-compute-not-authorized`.
+run. Real compute requires the exact committed protocol status
+`preregistered-compute-authorized`.
 
 The orchestration/ranking path can be tested without training:
 
@@ -24,9 +25,10 @@ python tools/run_model_selection.py --campaign-dir /tmp/patchcascade-selection-f
 ```
 
 Synthetic output is labelled `synthetic-fixture-not-evidence` and can never be
-promoted. After explicit review authorizes compute in the version-controlled
-protocol, omit `--synthetic-fixture`; there are no contributor-entered candidates,
-seeds, budgets, ranking flags, or evaluator settings.
+promoted. For the authorized development campaign, omit `--synthetic-fixture`;
+there are no contributor-entered candidates, seeds, budgets, ranking flags, or
+evaluator settings. Held-out splits remain sealed until a proposed selected spec
+is separately reviewed and frozen.
 
 ## Stage 0: paired action-interface selection
 
