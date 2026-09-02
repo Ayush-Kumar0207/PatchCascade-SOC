@@ -1,0 +1,46 @@
+name: Research training safety
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: research-training-safety-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-validation:
+    name: Required safety checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install exact canonical dependency lock
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-training.txt
+          python -m pip install -e . --no-deps
+          python -m pip check
+      - name: Static validation
+        run: |
+          python -m json.tool training_specs/canonical_v1.json > /dev/null
+          python -m json.tool training_specs/model_selection_v1.json > /dev/null
+          python -m compileall -q . -x '/(\.git|\.venv|static)/'
+          python tools/validate_model_selection.py
+      - name: Exact-lock tests, environment checks, and PPO update probe
+        run: python tools/training_preflight.py --spec training_specs/canonical_v1.json
+      - name: New-process safe-resume equivalence probe
+        run: python tools/resume_equivalence_probe.py
+      - name: Synthetic model-selection orchestration fixture
+        run: >-
+          python tools/run_model_selection.py
+          --campaign-dir /tmp/patchcascade-selection-${{ github.run_id }}-${{ github.run_attempt }}
+          --synthetic-fixture

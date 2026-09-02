@@ -62,7 +62,13 @@ Our reward design implements **potential-based reward shaping** (Ng, Harada & Ru
 R'(s, a, s') = R(s, a, s') + γΦ(s') - Φ(s)
 ```
 
-Where `Φ(s)` is our potential function (total penalty from risk + downtime). This guarantees that any policy optimal under the shaped reward is also optimal under the original sparse reward.
+The corrected environment defines `Φ(s) = -total_penalty(s)`, uses `γ = 0.99`
+in both PPO and shaping, and sets terminal-state potential to zero. Under those
+conditions the shaping term preserves the optimal policies of the explicitly
+defined base reward (time cost, invalid-action cost, and terminal outcome). The
+pre-hardening implementation used an undiscounted penalty difference with a
+`γ=0.99` learner and therefore did **not** justify this guarantee; models trained
+under that older reward schema are not canonical-v1 evidence.
 
 **Key References:**
 - Ng, A. Y., Harada, D., & Russell, S. (1999). *Policy invariance under reward transformations*. ICML.
@@ -166,10 +172,11 @@ The agent must dynamically adapt its strategy when new threats emerge.
 Unlike sparse-reward environments, PatchCascade provides continuous feedback:
 
 ```
-Reward = (Previous Penalty) - (Current Penalty) - 0.1
+Reward = BaseReward + 0.99 × Φ(Current State) - Φ(Previous State)
 
-Where Penalty = Risk_Penalty + Downtime_Penalty
-The -0.1 time pressure ensures every step has non-zero reward.
+Where Φ(State) = -(Risk_Penalty + Downtime_Penalty)
+and BaseReward includes the -0.1 time cost, invalid-action cost, and terminal outcome.
+True terminal states use Φ=0; time-limit truncations retain the observed state potential.
 ```
 
 | Event | Reward Impact |
@@ -202,21 +209,24 @@ H_t — Aggregate health metrics at turn t
 The reward at each step uses **potential-based reward shaping**:
 
 ```
-R_t = Φ(S_{t-1}) - Φ(S_t) - 0.1 + R_terminal
+  R'_t = R_base,t + γ Φ(S_t) - Φ(S_{t-1})
 
 Where:
-  Φ(S) = Risk_Penalty(S) + Downtime_Penalty(S)
+  γ = 0.99
+  Φ(S) = -(Risk_Penalty(S) + Downtime_Penalty(S))
   
   Risk_Penalty = Σ_j [ cvss_j × |affected_online_j| × (2 if exploit_in_wild_j else 1) ]
   
   Downtime_Penalty = Σ_i [ tier_mult(n_i) × (2 if crashed(n_i) else 1) ]   ∀ n_i ∉ ONLINE
   
-  -0.1 = time pressure penalty (ensures dense non-zero reward every step)
+  R_base,t = -0.1 + invalid-action penalty (if any) + terminal outcome (if any)
   
   R_terminal = { +50 if all vulns patched,  -100 if all nodes crashed,  0 otherwise }
 ```
 
-This formulation guarantees that **every step produces non-zero reward**, providing truly dense learning signal throughout the episode.
+This normally provides dense feedback, but no claim is made that every numerical
+transition must be non-zero. Policy-invariance applies only to the corrected
+reward schema and matching discount/terminal handling described above.
 
 ### Normalization
 
@@ -591,7 +601,9 @@ Get full environment metadata including all tasks, graders, and schemas.
 We evaluate four agent types across all five task levels using our multi-dimensional grading system.
 Scores are composite (Completion × Efficiency × Safety × Strategy), normalized to [0.0, 1.0].
 
-> Run `python benchmark.py --episodes 10` to reproduce these results.
+> The table below is a historical, pre-canonical snapshot. The old benchmark did
+> not predeclare matched episode seeds and is **not canonical evidence**. Do not
+> compare new PPO claims against it as though it were a frozen test result.
 
 | Agent | Easy | Medium | Hard | IR | Zero-Day | Avg |
 |-------|:----:|:------:|:----:|:--:|:--------:|:---:|
@@ -600,7 +612,17 @@ Scores are composite (Completion × Efficiency × Safety × Strategy), normalize
 | **PPO (RL-trained)** | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
 | **LLM Agent** | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
 
-> **Note:** RL training uses PPO via Stable-Baselines3 with our Gymnasium wrapper. See [`train_rl.py`](train_rl.py) for training scripts and hyperparameters.
+> **Note:** `train_rl.py` is retained for historical/interactive experiments.
+> [`training_specs/canonical_v1.json`](training_specs/canonical_v1.json) is a
+> corrected provisional baseline, not the final highest-quality experiment.
+> Held-out seeds remain sealed until the bounded validation-only process in
+> [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) produces a new,
+> reviewed `frozen-final-selected` spec. Expensive contributor training is not
+> currently authorized.
+> The locked runner first performs an equal-budget, paired validation-only
+> MultiDiscrete PPO versus MaskablePPO decision, then applies the bounded
+> hyperparameter campaign to the mechanical winner; neither interface has a
+> claimed result in this PR.
 
 ### 🏋️ Train Your Own Agent
 
@@ -616,14 +638,23 @@ model = PPO("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=50_000)
 ```
 
-```bash
-# CLI training (all levels, curriculum learning, plotting)
-python train_rl.py --task easy --steps 10000       # Quick test
-python train_rl.py --all --steps 50000              # Train all levels
-python train_rl.py --curriculum                     # Curriculum: easy→medium→hard
-python train_rl.py --plot                           # Generate training curves
-python benchmark.py --episodes 20                   # Full benchmark suite
-```
+For the contributor-safe sequence—exact-lock preflight, safe-boundary automatic resume, trusted-runtime-state handling, matched held-out
+evaluation, verification, and submission bundle—follow
+[`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md). Contributors
+do not edit seeds or hyperparameters; the version-controlled spec supplies them.
+Artifact integrity and policy acceptance are separate: a complete negative run is
+retained as evidence, while the verifier refuses a success label unless every
+held-out per-task quality and safety gate passes on both frozen test splits.
+
+---
+
+## Training & Reproducibility Contributors
+
+Accepted independent runs retain Git/PR attribution and may be listed here with
+immutable artifact links and research/reproduction credit appropriate to the work.
+See [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md) and
+[issue #2](https://github.com/Ayush-Kumar0207/PatchCascade-SOC/issues/2).
+No payment, employment implication, or GitHub-controlled achievement is promised.
 
 ---
 

@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "campaign_id": "patchcascade-validation-selection-v1",
+  "status": "preregistered-no-results-compute-not-authorized",
+  "data_policy": {
+    "allowed_splits": ["training", "validation"],
+    "forbidden_splits": ["canonical_test", "confirmation_test"],
+    "validation_seeds": [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009, 10010],
+    "training_seeds": [42, 1042, 2042]
+  },
+  "bounded_search": {
+    "maximum_candidates": 8,
+    "candidates": [
+      {"id": "c01", "learning_rate": 0.0001, "entropy_coefficient": 0.005, "network": [128, 128]},
+      {"id": "c02", "learning_rate": 0.0001, "entropy_coefficient": 0.01, "network": [128, 128]},
+      {"id": "c03", "learning_rate": 0.0003, "entropy_coefficient": 0.005, "network": [128, 128]},
+      {"id": "c04", "learning_rate": 0.0003, "entropy_coefficient": 0.01, "network": [128, 128]},
+      {"id": "c05", "learning_rate": 0.0001, "entropy_coefficient": 0.005, "network": [256, 256]},
+      {"id": "c06", "learning_rate": 0.0001, "entropy_coefficient": 0.01, "network": [256, 256]},
+      {"id": "c07", "learning_rate": 0.0003, "entropy_coefficient": 0.005, "network": [256, 256]},
+      {"id": "c08", "learning_rate": 0.0003, "entropy_coefficient": 0.01, "network": [256, 256]}
+    ],
+    "fixed": {
+      "action_interface_source": "interface_decision.json",
+      "algorithm_source": "interface_decision.json",
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "clip_range": 0.2,
+      "batch_size": 64,
+      "epochs_per_update": 10,
+      "schedule": "progressive-curriculum-plus-balanced-mixed"
+    }
+  },
+  "successive_halving": [
+    {"round": 1, "candidate_count": 8, "training_seeds": [42], "timesteps_per_stage": 10240, "advance": 3},
+    {"round": 2, "candidate_count": 3, "training_seeds": [42, 1042, 2042], "timesteps_per_stage": 20480, "advance": 2},
+    {"round": 3, "candidate_count": 2, "training_seeds": [42, 1042, 2042], "timesteps_per_stage": 40960, "advance": 1}
+  ],
+  "selection_rule": {
+    "safety_eligibility": ["zero_catastrophic_failures", "zero_cascade_failures", "zero_invalid_actions"],
+    "ranking": [
+      "highest_worst_task_paired_bootstrap_lower_bound_vs_heuristic",
+      "highest_worst_task_success_rate",
+      "highest_macro_validation_score",
+      "lower_total_timesteps",
+      "smaller_network",
+      "lexicographically_lower_candidate_id"
+    ],
+    "single_final_decision": true,
+    "no_manual_override_after_results": true
+  },
+  "action_interface_selection": {
+    "status": "preregistered-interface-first-no-results",
+    "order": "interface-first-then-hyperparameter-selection-on-the-mechanical-winner",
+    "development_only": true,
+    "training_seeds": [42, 1042, 2042],
+    "validation_seeds": [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009, 10010],
+    "task_levels": ["easy", "medium", "hard", "incident_response", "zero_day"],
+    "timesteps_per_stage": 10240,
+    "reference_hyperparameters": {
+      "learning_rate": 0.0003,
+      "entropy_coefficient": 0.01,
+      "network": [256, 256]
+    },
+    "interfaces": [
+      {
+        "id": "multidiscrete-ppo",
+        "status": "implemented-baseline",
+        "complexity_priority": 1,
+        "algorithm": "PPO",
+        "action_schema_version": "multidiscrete-v2-joint-validity-penalized"
+      },
+      {
+        "id": "flattened-discrete-maskableppo",
+        "status": "implemented-contract-tested-no-comparison-results",
+        "complexity_priority": 2,
+        "algorithm": "MaskablePPO",
+        "action_schema_version": "discrete-v1-state-masked-joint-validity",
+        "dependency": "sb3-contrib==2.8.0",
+        "mapping": "((action_type * 15) + node_index) * 8 + vulnerability_index",
+        "mask_semantics": "true exactly when the canonical decoded action passes validate_action_for_observation"
+      }
+    ],
+    "safety_eligibility": ["zero_catastrophic_failures", "zero_cascade_failures", "zero_invalid_actions"],
+    "paired_comparison": {
+      "unit": ["training_seed", "task_level", "validation_seed"],
+      "metric": "maskableppo_score_minus_multidiscrete_ppo_score",
+      "bootstrap_samples": 5000,
+      "bootstrap_seed": 5785238022979748179,
+      "require_complete_identical_pair_keys": true,
+      "criterion_for_more_complex_interface": "lower_95pct_bootstrap_bound_above_zero_on_every_task"
+    },
+    "decision_rule": [
+      "if neither interface is safety-eligible, stop",
+      "if only one interface is safety-eligible, select it",
+      "if both are safety-eligible, select flattened-discrete-maskableppo only when every task paired-bootstrap lower bound is above zero",
+      "otherwise select the lower-complexity multidiscrete-ppo interface"
+    ],
+    "tie_breaking": "lower complexity_priority, then lexicographically lower interface id",
+    "no_manual_override_after_results": true,
+    "decision_file": "interface_decision.json"
+  },
+  "freeze_policy": {
+    "selected_configuration_requires_new_versioned_spec": true,
+    "selected_spec_required_status": "frozen-final-selected",
+    "selected_spec_must_be_committed_before_held_out_evaluation": true,
+    "canonical_and_confirmation_results_must_not_exist_when_freezing": true
+  },
+  "orchestration": {
+    "entrypoint": "tools/run_model_selection.py",
+    "real_execution_requires_status": "preregistered-compute-authorized",
+    "campaign_lock": "campaign_lock.json",
+    "resume_state": "campaign_state.json",
+    "decision": "selection_decision.json",
+    "interface_decision": "interface_decision.json",
+    "interface_decision_hash_bound_to_generated_specs": true,
+    "proposed_spec": "proposed_final_spec.json",
+    "synthetic_fixture_is_never_evidence": true
+  }
+}

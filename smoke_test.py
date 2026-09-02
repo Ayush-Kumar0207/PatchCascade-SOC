@@ -26,6 +26,12 @@ import sys
 import time
 from dataclasses import dataclass
 
+# Windows consoles may default to CP1252; the smoke test must not fail merely
+# because its human-readable status markers contain Unicode.
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
 # Ensure project root is importable
 from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -280,7 +286,7 @@ def main():
     # ---- Summary ----
     print("=" * 70)
     if all_passed:
-        print("  ✅ ALL CHECKS PASSED — Submission is ready!")
+        print("  ✅ FUNCTIONAL SMOKE CHECKS PASSED — this is not an acceptance result")
     else:
         print("  ❌ SOME CHECKS FAILED — Fix errors before submitting.")
     print("=" * 70)

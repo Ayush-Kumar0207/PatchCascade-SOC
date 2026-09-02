@@ -30,7 +30,31 @@ results/
 # Environment variables (keep secrets out of repo)
 .env
 .env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+*service-account*.json
+token.json
+.huggingface/
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Canonical local run material (small accepted result JSONs can be committed
+# explicitly from a reviewed submission; default run directories stay local)
+runs/
+checkpoints/
+checkpoint_*.zip
+*.safetensors
+*.pt
+*.pth
+wandb/
+patchcascade_submission_bundle.zip
+submission_bundle/
+evaluation_quarantine/
+*.inprogress/
+.*.tmp-*.zip
+.pytest_cache/

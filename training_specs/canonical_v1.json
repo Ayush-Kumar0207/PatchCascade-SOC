@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "experiment_id": "patchcascade-canonical-v1",
+  "status": "provisional-frozen-baseline-not-claimed-optimal",
+  "methodology": {
+    "canonical_mode": "progressive_curriculum_with_mixed_task_consolidation",
+    "rationale": "All tasks share one corrected observation/action space. Progressive stages introduce mechanics in increasing complexity; a final balanced mixed stage reduces curriculum-order forgetting. Per-level fine-tuning is reserved for a separately preregistered ablation because it creates five policies and additional selection risk.",
+    "stages": [
+      {"task": "easy", "timesteps": 20480},
+      {"task": "medium", "timesteps": 20480},
+      {"task": "hard", "timesteps": 20480},
+      {"task": "incident_response", "timesteps": 20480},
+      {"task": "zero_day", "timesteps": 20480},
+      {"task": "mixed", "timesteps": 20480, "tasks": ["easy", "medium", "hard", "incident_response", "zero_day"]}
+    ]
+  },
+  "algorithm": {
+    "name": "PPO",
+    "policy": "MlpPolicy",
+    "architecture": {"policy": [256, 256], "value": [256, 256]},
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "entropy_coefficient": 0.01,
+    "value_coefficient": 0.5,
+    "max_grad_norm": 0.5,
+    "rollout_steps": 256,
+    "batch_size": 64,
+    "epochs_per_update": 10,
+    "parallel_environments": 4,
+    "device": "auto"
+  },
+  "environment": {
+    "api_version": "patchcascade-gym-v4",
+    "schema_version": "gym-observation-v3-cve-host-incidence",
+    "action_schema_version": "multidiscrete-v2-joint-validity-penalized",
+    "reward_schema_version": "pbrs-v2-gamma-0.99-terminal-zero",
+    "reward_scale": 0.01,
+    "normalize_observations": true,
+    "invalid_action_policy": "penalize-no-silent-repair",
+    "task_levels": ["easy", "medium", "hard", "incident_response", "zero_day"]
+  },
+  "seeds": {
+    "global_training_seed": 42,
+    "worker_seed_rule": "global_seed + 1000*stage_index + worker_rank",
+    "validation": [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009, 10010],
+    "canonical_test": [20001, 20002, 20003, 20004, 20005, 20006, 20007, 20008, 20009, 20010, 20011, 20012, 20013, 20014, 20015, 20016, 20017, 20018, 20019, 20020, 20021, 20022, 20023, 20024, 20025, 20026, 20027, 20028, 20029, 20030, 20031, 20032, 20033, 20034, 20035, 20036, 20037, 20038, 20039, 20040, 20041, 20042, 20043, 20044, 20045, 20046, 20047, 20048, 20049, 20050],
+    "confirmation_test": [30001, 30002, 30003, 30004, 30005, 30006, 30007, 30008, 30009, 30010, 30011, 30012, 30013, 30014, 30015, 30016, 30017, 30018, 30019, 30020, 30021, 30022, 30023, 30024, 30025, 30026, 30027, 30028, 30029, 30030, 30031, 30032, 30033, 30034, 30035, 30036, 30037, 30038, 30039, 30040, 30041, 30042, 30043, 30044, 30045, 30046, 30047, 30048, 30049, 30050]
+  },
+  "evaluation": {
+    "max_steps_by_task": {"easy": 30, "medium": 50, "hard": 100, "incident_response": 60, "zero_day": 80},
+    "agents": ["random", "heuristic", "ppo"],
+    "deterministic_policy": true,
+    "bootstrap_samples": 5000,
+    "confidence_level": 0.95,
+    "require_raw_episode_records": true,
+    "policy_acceptance": {
+      "held_out_splits": ["canonical", "confirmation"],
+      "require_paired_ci_above_random_per_task": true,
+      "require_paired_ci_above_heuristic_per_task": true,
+      "require_zero_ppo_catastrophic_failures": true,
+      "require_zero_ppo_cascade_failures": true,
+      "require_zero_ppo_invalid_actions": true
+    },
+    "baseline_rules": {
+      "random": "Report whether PPO exceeds Random with paired bootstrap confidence intervals.",
+      "heuristic": "Always report PPO versus Heuristic per task; below-Heuristic is valid but must be flagged.",
+      "critical": "Flag any catastrophic safety failure, missing task, high variance, or success-rate regression."
+    }
+  },
+  "checkpoint": {"frequency_timesteps": 5000, "retain_last": 3},
+  "runtime": {"python": "3.11", "minimum_free_disk_gib": 2.0},
+  "runtime_guards": {
+    "fail_on_nonfinite_observation_or_reward": true,
+    "fail_on_nonfinite_loss": true,
+    "invalid_action_warning_rate": 0.5,
+    "degenerate_noop_warning_rate": 0.95,
+    "diagnostic_window": 1000
+  },
+  "outputs": {
+    "run_lock": "run_config.json",
+    "preflight_report": "preflight_report.json",
+    "provenance": "run_provenance.json",
+    "provenance_markdown": "RUN_PROVENANCE.md",
+    "events": "events.jsonl",
+    "progress": "training_progress.json",
+    "final_model": "final_model.zip",
+    "final_model_metadata": "final_model.metadata.json",
+    "validation_dir": "evaluation_validation",
+    "canonical_dir": "evaluation_canonical",
+    "confirmation_dir": "evaluation_confirmation",
+    "evaluation_marker": "evaluation_complete.json",
+    "training_plots_dir": "training_plots",
+    "manifest": "artifact_manifest.json",
+    "checksums": "SHA256SUMS.txt"
+  },
+  "dependencies": {
+    "gymnasium": "1.2.3",
+    "stable-baselines3": "2.8.0",
+    "sb3-contrib": "2.8.0",
+    "cloudpickle": "3.1.2",
+    "pandas": "3.0.2",
+    "pydantic": "2.12.5",
+    "numpy": "2.4.4",
+    "torch": "2.11.0",
+    "matplotlib": "3.10.8",
+    "tqdm": "4.67.3",
+    "pytest": "9.0.3",
+    "pytest-asyncio": "1.3.0"
+  },
+  "required_source_files": [
+    "training_specs/canonical_v1.json", "training_specs/model_selection_v1.json",
+    "MODEL_SELECTION_PROTOCOL.md", "KNOWN_TRAINING_FAILURE_MODES.md",
+    "RUNTIME_STATE_SECURITY.md",
+    "train_canonical.py", "training_repro.py",
+    "environment.py", "gym_wrapper.py", "models.py", "grader.py", "benchmark.py",
+    "tools/run_evaluation.py", "tools/verify_training_artifacts.py",
+    "tools/resume_equivalence_probe.py", "tools/validate_model_selection.py",
+    "tools/run_model_selection.py",
+    "smoke_test.py", "tests"
+  ],
+  "training_critical_files": [
+    "training_specs/canonical_v1.json", "training_specs/model_selection_v1.json",
+    "MODEL_SELECTION_PROTOCOL.md", "KNOWN_TRAINING_FAILURE_MODES.md",
+    "RUNTIME_STATE_SECURITY.md",
+    "train_canonical.py", "training_repro.py",
+    "environment.py", "gym_wrapper.py", "models.py", "grader.py", "benchmark.py",
+    "tools/run_evaluation.py", "tools/verify_training_artifacts.py",
+    "tools/resume_equivalence_probe.py", "tools/validate_model_selection.py",
+    "tools/run_model_selection.py",
+    "requirements.txt", "requirements-training.txt", "uv.lock"
+  ]
+}

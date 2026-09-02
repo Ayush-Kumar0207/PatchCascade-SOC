@@ -236,6 +236,17 @@ async def api_info() -> dict:
         "name": "PatchCascade SOC",
         "version": "2.0.0",
         "description": "OpenEnv-compliant RL environment for vulnerability patch management",
+        "endpoints": {
+            "health": "GET /health",
+            "reset": "POST /reset",
+            "step": "POST /step",
+            "observation": "GET /observation",
+            "state": "GET /state",
+            "tasks": "GET /tasks",
+            "metadata": "GET /metadata",
+            "grade": "POST /grade/{task_id}",
+            "dashboard": "GET /dashboard/",
+        },
         "dashboard": "/dashboard/",
         "documentation": "/docs",
     }

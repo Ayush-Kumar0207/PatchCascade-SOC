@@ -42,6 +42,7 @@ from models import (
     PatchCascadeAction,
     PatchCascadeObservation,
     SeverityLevel,
+    validate_action_for_observation,
 )
 
 
@@ -54,9 +55,17 @@ MAX_NODES = 15       # Hard mode has up to 15 nodes
 MAX_VULNS = 8        # Zero-day can inject up to ~6 CVEs
 MAX_DEPS = 20        # Complex graphs can have many edges
 
+# Material observation/action/termination changes are an explicit compatibility
+# boundary. Old PPO archives must never be loaded as canonical-v1 models.
+ENVIRONMENT_API_VERSION = "patchcascade-gym-v4"
+OBSERVATION_SCHEMA_VERSION = "gym-observation-v3-cve-host-incidence"
+ACTION_SCHEMA_VERSION = "multidiscrete-v2-joint-validity-penalized"
+FLATTENED_ACTION_SCHEMA_VERSION = "discrete-v1-state-masked-joint-validity"
+
 # Feature sizes per element
 NODE_FEATURES = 6    # tier, state, patch_turns, has_vuln, is_exploited, is_critical_tier
 VULN_FEATURES = 5    # cvss, severity_code, num_affected, exploit_in_wild, patch_available
+VULN_HOST_MATRIX_SIZE = MAX_VULNS * MAX_NODES  # explicit CVE-to-host incidence
 DEP_FEATURES = 4     # from_node_idx, to_node_idx, is_hard, exists
 HEALTH_FEATURES = 11 # all NetworkHealth fields
 
@@ -64,12 +73,21 @@ HEALTH_FEATURES = 11 # all NetworkHealth fields
 OBS_SIZE = (
     MAX_NODES * NODE_FEATURES
     + MAX_VULNS * VULN_FEATURES
+    + VULN_HOST_MATRIX_SIZE
     + MAX_DEPS * DEP_FEATURES
     + HEALTH_FEATURES
 )
 
 # Action types (5 total)
 NUM_ACTION_TYPES = 5  # scan, suspend, patch, resume, noop
+FLATTENED_ACTION_COUNT = NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS
+ACTION_TYPES = (
+    ActionType.SCAN_HOST,
+    ActionType.SUSPEND_SERVICE,
+    ActionType.APPLY_PATCH,
+    ActionType.RESUME_SERVICE,
+    ActionType.NOOP,
+)
 
 # Action encoding: MultiDiscrete([action_type, target_node, target_vuln])
 # This allows any combination: "apply_patch node_3 vuln_2"
@@ -120,7 +138,12 @@ class PatchCascadeGymEnv(gym.Env):
                       (action_type, target_node, target_vuln).
     """
 
-    metadata = {"render_modes": ["human", "ansi"]}
+    metadata = {
+        "render_modes": ["human", "ansi"],
+        "environment_api_version": ENVIRONMENT_API_VERSION,
+        "observation_schema_version": OBSERVATION_SCHEMA_VERSION,
+        "action_schema_version": ACTION_SCHEMA_VERSION,
+    }
 
     def __init__(
         self,
@@ -149,6 +172,7 @@ class PatchCascadeGymEnv(gym.Env):
         self._idx_to_cve: dict[int, str] = {}
         self._episode_reward: float = 0.0
         self._step_count: int = 0
+        self._has_reset: bool = False
 
         # ── Gymnasium Spaces ──────────────────────────────────────────
 
@@ -192,8 +216,11 @@ class PatchCascadeGymEnv(gym.Env):
             task_level = options["task_level"]
             self._task_level = task_level
 
-        effective_seed = seed if seed is not None else self._seed
+        # The constructor seed initializes a deterministic *sequence*. Reusing
+        # it on every reset made all training episodes identical.
+        effective_seed = seed if seed is not None else (self._seed if not self._has_reset else None)
         self._obs = self._env.reset(task_level=task_level, seed=effective_seed)
+        self._has_reset = True
 
         # Build hostname ↔ index mappings
         self._hostname_to_idx = {
@@ -211,12 +238,14 @@ class PatchCascadeGymEnv(gym.Env):
         self._step_count = 0
 
         obs_array = self._encode_observation(self._obs)
+        if not np.isfinite(obs_array).all():
+            raise FloatingPointError("NaN/Inf observation produced during reset")
         info = self._build_info(self._obs)
 
         return obs_array, info
 
     def step(
-        self, action: np.ndarray | list[int]
+        self, action: np.ndarray | list[int] | int
     ) -> tuple[np.ndarray, float, bool, bool, dict]:
         """
         Execute one step in the environment.
@@ -247,6 +276,10 @@ class PatchCascadeGymEnv(gym.Env):
 
         # Scale reward for training stability
         scaled_reward = result.reward * self._reward_scale
+        if not np.isfinite(obs_array).all():
+            raise FloatingPointError("NaN/Inf observation produced during step")
+        if not np.isfinite(scaled_reward):
+            raise FloatingPointError("NaN/Inf reward produced during step")
         self._episode_reward += result.reward
 
         # Build info dict
@@ -257,7 +290,8 @@ class PatchCascadeGymEnv(gym.Env):
         info["action_target"] = patch_action.target
         info["action_valid"] = result.info.get("valid", True)
 
-        return obs_array, scaled_reward, result.done, result.truncated, info
+        terminated = bool(result.done and not result.truncated)
+        return obs_array, scaled_reward, terminated, bool(result.truncated), info
 
     def render(self) -> str | None:
         """Render the environment state."""
@@ -282,6 +316,7 @@ class PatchCascadeGymEnv(gym.Env):
         Layout:
             [0 .. MAX_NODES*NODE_FEATURES)         : Node features
             [.. + MAX_VULNS*VULN_FEATURES)          : Vulnerability features
+            [.. + MAX_VULNS*MAX_NODES)              : CVE-to-host incidence
             [.. + MAX_DEPS*DEP_FEATURES)            : Dependency features
             [.. + HEALTH_FEATURES)                  : Health metrics
 
@@ -332,6 +367,17 @@ class PatchCascadeGymEnv(gym.Env):
             vec[base + 4] = 1.0 if vuln.patch_available else 0.0
 
         offset += MAX_VULNS * VULN_FEATURES
+
+        # ── Encode CVE-to-host incidence ──────────────────────────────
+        # Without this matrix, many distinct states were observationally
+        # aliased and the policy could not know which patch target was valid.
+        for vuln_idx, vuln in enumerate(obs.vulnerabilities[:MAX_VULNS]):
+            for hostname in vuln.affected_hosts:
+                node_idx = self._hostname_to_idx.get(hostname)
+                if node_idx is not None and node_idx < MAX_NODES:
+                    vec[offset + vuln_idx * MAX_NODES + node_idx] = 1.0
+
+        offset += VULN_HOST_MATRIX_SIZE
 
         # ── Encode Dependencies ───────────────────────────────────────
         for i, dep in enumerate(obs.dependencies[:MAX_DEPS]):
@@ -388,25 +434,18 @@ class PatchCascadeGymEnv(gym.Env):
         Decode a MultiDiscrete action [action_type, node_idx, vuln_idx]
         into a PatchCascadeAction.
 
-        Handles out-of-range indices gracefully by falling back to NOOP.
+        Padded/out-of-range choices remain invalid so the environment applies
+        its declared invalid-action penalty. They are never silently repaired.
         """
         action_type_idx = int(action[0])
         node_idx = int(action[1])
         vuln_idx = int(action[2])
 
         # Map action type
-        action_types = [
-            ActionType.SCAN_HOST,
-            ActionType.SUSPEND_SERVICE,
-            ActionType.APPLY_PATCH,
-            ActionType.RESUME_SERVICE,
-            ActionType.NOOP,
-        ]
-
-        if action_type_idx >= len(action_types):
+        if action_type_idx >= len(ACTION_TYPES):
             action_type_idx = 4  # NOOP fallback
 
-        action_type = action_types[action_type_idx]
+        action_type = ACTION_TYPES[action_type_idx]
 
         # NOOP needs no target
         if action_type == ActionType.NOOP:
@@ -418,28 +457,19 @@ class PatchCascadeGymEnv(gym.Env):
         # Resolve target hostname
         hostname = self._idx_to_hostname.get(node_idx, "")
         if not hostname:
-            # Invalid node index — fall back to NOOP
             return PatchCascadeAction(
-                action_type=ActionType.NOOP,
-                reason="Invalid node index, defaulting to NOOP",
+                action_type=action_type,
+                target=f"__invalid_node_{node_idx}__",
+                cve_id="CVE-0000-0000" if action_type == ActionType.APPLY_PATCH else None,
+                reason="RL agent selected padded node index",
             )
 
         # For APPLY_PATCH, resolve CVE ID
         cve_id = None
         if action_type == ActionType.APPLY_PATCH:
             cve_id = self._idx_to_cve.get(vuln_idx)
-            if cve_id is None and self._obs and self._obs.vulnerabilities:
-                # Fall back to first available CVE for this host
-                for v in self._obs.vulnerabilities:
-                    if hostname in v.affected_hosts:
-                        cve_id = v.cve_id
-                        break
             if cve_id is None:
-                # No valid CVE — NOOP
-                return PatchCascadeAction(
-                    action_type=ActionType.NOOP,
-                    reason="No valid CVE for patch, defaulting to NOOP",
-                )
+                cve_id = "CVE-0000-0000"
 
         return PatchCascadeAction(
             action_type=action_type,
@@ -466,6 +496,7 @@ class PatchCascadeGymEnv(gym.Env):
             "nodes_online": obs.health.nodes_online,
             "nodes_crashed": obs.health.nodes_crashed,
             "step_count": self._step_count,
+            "episode_seed": self._env.state.episode_seed,
         }
         if step_info:
             info.update(step_info)
@@ -479,42 +510,125 @@ class PatchCascadeGymEnv(gym.Env):
         """
         Generate an action mask for valid actions (for masked policy training).
 
-        Returns a boolean array of shape (NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS,)
-        where True = valid action. Useful for MaskablePPO from SB3-contrib.
+        Returns the exact joint validity tensor flattened in C order with shape
+        ``NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS``. MultiDiscrete factor masks
+        cannot express node/CVE pair constraints, so callers must not pass this
+        directly to SB3-contrib without a joint-action adapter.
         """
         if self._obs is None:
-            return np.ones(NUM_ACTION_TYPES, dtype=bool)
+            return np.zeros(NUM_ACTION_TYPES * MAX_NODES * MAX_VULNS, dtype=bool)
 
-        # Simplified: mask action types that have at least one valid target
-        mask = np.zeros(NUM_ACTION_TYPES, dtype=bool)
-
-        # NOOP is always valid
-        mask[4] = True
-
-        for node in self._obs.nodes:
-            # SCAN_HOST: any node can be scanned
-            mask[0] = True
-            # SUSPEND: only ONLINE nodes
+        mask = np.zeros((NUM_ACTION_TYPES, MAX_NODES, MAX_VULNS), dtype=bool)
+        mask[4, 0, 0] = True  # one canonical NOOP; other encodings are aliases
+        for node_idx, node in enumerate(self._obs.nodes[:MAX_NODES]):
+            mask[0, node_idx, 0] = True
             if node.state == NodeState.ONLINE:
-                mask[1] = True
-            # RESUME: only SUSPENDED or CRASHED nodes
+                mask[1, node_idx, 0] = True
             if node.state in (NodeState.SUSPENDED, NodeState.CRASHED):
-                mask[3] = True
+                mask[3, node_idx, 0] = True
+            for vuln_idx, vuln in enumerate(self._obs.vulnerabilities[:MAX_VULNS]):
+                if (
+                    node.hostname in vuln.affected_hosts
+                    and node.state in (NodeState.ONLINE, NodeState.SUSPENDED)
+                    and (node.tier != CriticalityTier.CRITICAL or node.state == NodeState.SUSPENDED)
+                ):
+                    mask[2, node_idx, vuln_idx] = True
+        return mask.reshape(-1)
 
-        # APPLY_PATCH: need at least one vuln with an affected online/suspended node
-        for v in self._obs.vulnerabilities:
-            for h in v.affected_hosts:
-                node = next((n for n in self._obs.nodes if n.hostname == h), None)
-                if node and node.state in (NodeState.ONLINE, NodeState.SUSPENDED):
-                    mask[2] = True
-                    break
-
-        return mask
+    def sync_observation(self, obs: PatchCascadeObservation) -> None:
+        """Synchronize index maps for external matched-policy evaluation."""
+        self._obs = obs
+        self._hostname_to_idx = {node.hostname: idx for idx, node in enumerate(obs.nodes)}
+        self._idx_to_hostname = {idx: name for name, idx in self._hostname_to_idx.items()}
+        self._cve_to_idx = {vuln.cve_id: idx for idx, vuln in enumerate(obs.vulnerabilities)}
+        self._idx_to_cve = {idx: cve for cve, idx in self._cve_to_idx.items()}
 
     @property
     def unwrapped_env(self) -> PatchCascadeEnv:
         """Access the underlying PatchCascade environment."""
         return self._env
+
+
+class FlattenedMaskedPatchCascadeEnv(PatchCascadeGymEnv):
+    """One-to-one Discrete action adapter for state-dependent MaskablePPO.
+
+    The flattened ID is ``((action_type * MAX_NODES) + node) * MAX_VULNS + cve``.
+    Only one encoding is canonical for target-free or CVE-free operations, which
+    removes aliases without silently repairing an invalid selection.
+    """
+
+    metadata = {
+        **PatchCascadeGymEnv.metadata,
+        "action_schema_version": FLATTENED_ACTION_SCHEMA_VERSION,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.action_space = spaces.Discrete(FLATTENED_ACTION_COUNT)
+
+    @staticmethod
+    def flatten_action(action_type_idx: int, node_idx: int, vuln_idx: int) -> int:
+        if not 0 <= action_type_idx < NUM_ACTION_TYPES:
+            raise ValueError("action_type_idx is outside the flattened action schema")
+        if not 0 <= node_idx < MAX_NODES:
+            raise ValueError("node_idx is outside the flattened action schema")
+        if not 0 <= vuln_idx < MAX_VULNS:
+            raise ValueError("vuln_idx is outside the flattened action schema")
+        return (action_type_idx * MAX_NODES + node_idx) * MAX_VULNS + vuln_idx
+
+    @staticmethod
+    def unflatten_action(action_id: int) -> tuple[int, int, int]:
+        if not 0 <= action_id < FLATTENED_ACTION_COUNT:
+            raise ValueError("action ID is outside the flattened action schema")
+        action_type_idx, remainder = divmod(action_id, MAX_NODES * MAX_VULNS)
+        node_idx, vuln_idx = divmod(remainder, MAX_VULNS)
+        return action_type_idx, node_idx, vuln_idx
+
+    @staticmethod
+    def is_canonical_coordinates(action_type_idx: int, node_idx: int, vuln_idx: int) -> bool:
+        if action_type_idx == 4:
+            return node_idx == 0 and vuln_idx == 0
+        if action_type_idx in {0, 1, 3}:
+            return vuln_idx == 0
+        return action_type_idx == 2
+
+    def _invalid_flat_action(self, action_id: int) -> PatchCascadeAction:
+        return PatchCascadeAction(
+            action_type=ActionType.SCAN_HOST,
+            target=f"__invalid_flat_action_{action_id}__",
+            reason="RL agent selected a noncanonical or out-of-range flattened action",
+        )
+
+    def _decode_action(self, action: np.ndarray | list[int] | int) -> PatchCascadeAction:
+        try:
+            action_id = int(np.asarray(action).item())
+            action_type_idx, node_idx, vuln_idx = self.unflatten_action(action_id)
+        except (TypeError, ValueError):
+            return self._invalid_flat_action(-1)
+        if not self.is_canonical_coordinates(action_type_idx, node_idx, vuln_idx):
+            return self._invalid_flat_action(action_id)
+        return super()._decode_action(np.asarray([action_type_idx, node_idx, vuln_idx]))
+
+    def action_masks(self) -> np.ndarray:
+        """Return the exact semantic-validity mask required by SB3-contrib."""
+        mask = np.zeros(FLATTENED_ACTION_COUNT, dtype=bool)
+        if self._obs is None:
+            return mask
+        for action_id in range(FLATTENED_ACTION_COUNT):
+            action_type_idx, node_idx, vuln_idx = self.unflatten_action(action_id)
+            if not self.is_canonical_coordinates(action_type_idx, node_idx, vuln_idx):
+                continue
+            decoded = super()._decode_action(
+                np.asarray([action_type_idx, node_idx, vuln_idx])
+            )
+            mask[action_id] = validate_action_for_observation(decoded, self._obs)[0]
+        if not mask.any():
+            raise RuntimeError("flattened action contract produced no valid action")
+        return mask
+
+    def get_action_mask(self) -> np.ndarray:
+        """Compatibility alias; MaskablePPO consumes ``action_masks`` directly."""
+        return self.action_masks()
 
 
 # =============================================================================
