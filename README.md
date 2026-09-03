@@ -35,6 +35,7 @@ tags:
 
 The frozen development/model-selection protocol is authorized for independent
 external execution. [Claim a PatchCascade compute run](https://github.com/Ayush-Kumar0207/PatchCascade-SOC/issues/2)
+· [Start with contributor onboarding](CONTRIBUTOR_ONBOARDING.md)
 · [Read the contributor guide](TRAINING_CONTRIBUTION_GUIDE.md)
 · [Read the frozen protocol](MODEL_SELECTION_PROTOCOL.md)
 
